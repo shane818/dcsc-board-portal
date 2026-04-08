@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  /* DCSC Brand Colors */
+  --color-navy: #2B2D6B;
+  --color-navy-dark: #1E1F4D;
+  --color-navy-light: #3d3f8a;
+  --color-dcsc-red: var(--org-accent, #C41E3A);
+  --color-dcsc-red-warm: var(--org-accent, #E53E3E);
+  --color-surface: #F2F4F8;
+}
+
+@layer base {
+  h1 {
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+}
