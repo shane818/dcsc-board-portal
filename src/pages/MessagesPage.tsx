@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
+import { useReactions } from '../hooks/useReactions'
 import { useProfiles } from '../hooks/useProfiles'
-import type { ConversationWithDetails } from '../types/database'
+import type { ConversationWithDetails, ReactionGroup } from '../types/database'
+
+const QUICK_EMOJIS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F389}', '\u{1F440}', '\u{2705}']
 
 // ---- Mention utilities ----
 
@@ -316,6 +319,11 @@ export default function MessagesPage() {
     sendMessage: send,
   } = useMessages(activeId ?? undefined, profile?.id)
 
+  // Reactions
+  const messageIds = useMemo(() => activeMessages.map((m) => m.id), [activeMessages])
+  const { reactions, toggleReaction } = useReactions(activeId ?? undefined, profile?.id, messageIds)
+  const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<string | null>(null)
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -336,6 +344,11 @@ export default function MessagesPage() {
   useEffect(() => {
     setMentionHighlight(0)
   }, [mentionQuery])
+
+  // Close emoji picker when switching conversations
+  useEffect(() => {
+    setEmojiPickerMsgId(null)
+  }, [activeId])
 
   const insertMention = useCallback(
     (member: { profile_id: string; profile: { full_name: string } }) => {
@@ -542,10 +555,11 @@ export default function MessagesPage() {
               ) : (
                 activeMessages.map((msg) => {
                   const isMe = msg.sender_id === profile?.id
+                  const msgReactions: ReactionGroup[] = reactions[msg.id] ?? []
                   return (
                     <div
                       key={msg.id}
-                      className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                      className={`group/msg flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
                     >
                       {/* Avatar */}
                       {!isMe && (
@@ -561,15 +575,72 @@ export default function MessagesPage() {
                             {msg.sender?.full_name}
                           </p>
                         )}
-                        <div
-                          className={`rounded-2xl px-3.5 py-2 text-sm ${
-                            isMe
-                              ? 'bg-navy text-white rounded-br-sm'
-                              : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'
-                          }`}
-                        >
-                          {renderMessageBody(msg.body, profile?.id ?? '')}
+
+                        {/* Message bubble + reaction trigger */}
+                        <div className="relative">
+                          <div
+                            className={`rounded-2xl px-3.5 py-2 text-sm ${
+                              isMe
+                                ? 'bg-navy text-white rounded-br-sm'
+                                : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'
+                            }`}
+                          >
+                            {renderMessageBody(msg.body, profile?.id ?? '')}
+                          </div>
+
+                          {/* Emoji add button — visible on hover */}
+                          <button
+                            onClick={() => setEmojiPickerMsgId(emojiPickerMsgId === msg.id ? null : msg.id)}
+                            className={`absolute ${isMe ? '-left-7' : '-right-7'} top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full bg-gray-100 text-xs hover:bg-gray-200 transition-opacity ${
+                              emojiPickerMsgId === msg.id ? 'opacity-100' : 'opacity-0 group-hover/msg:opacity-100'
+                            }`}
+                            title="Add reaction"
+                          >
+                            +
+                          </button>
+
+                          {/* Quick emoji picker */}
+                          {emojiPickerMsgId === msg.id && (
+                            <div
+                              className={`absolute ${isMe ? 'right-0' : 'left-0'} -top-10 z-30 flex items-center gap-0.5 rounded-full bg-white shadow-lg border border-gray-200 px-1.5 py-1`}
+                            >
+                              {QUICK_EMOJIS.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => {
+                                    toggleReaction(msg.id, emoji)
+                                    setEmojiPickerMsgId(null)
+                                  }}
+                                  className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-base transition-transform hover:scale-125"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
+
+                        {/* Reaction pills */}
+                        {msgReactions.length > 0 && (
+                          <div className={`flex flex-wrap gap-1 mt-0.5 px-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            {msgReactions.map((r) => (
+                              <button
+                                key={r.emoji}
+                                onClick={() => toggleReaction(msg.id, r.emoji)}
+                                title={r.profiles.join(', ')}
+                                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs border transition-colors ${
+                                  r.reacted
+                                    ? 'bg-navy/10 border-navy/30 text-navy'
+                                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                }`}
+                              >
+                                <span>{r.emoji}</span>
+                                <span className="font-medium">{r.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         <p className="text-[10px] text-gray-400 mt-0.5 px-1">
                           {formatTime(msg.created_at)}
                         </p>

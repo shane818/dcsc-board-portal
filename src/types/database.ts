@@ -330,6 +330,21 @@ export interface ConversationWithDetails extends Conversation {
   my_last_read_at?: string
 }
 
+export interface MessageReaction {
+  id: string
+  message_id: string
+  profile_id: string
+  emoji: string
+  created_at: string
+}
+
+export interface ReactionGroup {
+  emoji: string
+  count: number
+  reacted: boolean          // whether current user reacted with this emoji
+  profiles: string[]        // full_name list for tooltip
+}
+
 export interface MessageWithSender extends Message {
   sender: Pick<Profile, 'id' | 'full_name' | 'avatar_url'>
 }
