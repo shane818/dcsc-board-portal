@@ -14,8 +14,7 @@ import { useAllProfiles } from '../hooks/useAllProfiles'
 import { useMeetingAttendees } from '../hooks/useMeetingAttendees'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import type { AgendaItemStatus, ActionItemPriority, MeetingStatus, Profile, Meeting } from '../types/database'
-import { createCalendarEvent } from '../lib/calendar'
+import type { AgendaItemStatus, ActionItemPriority, MeetingStatus } from '../types/database'
 
 const meetingStatusColors: Record<MeetingStatus, string> = {
   scheduled: 'bg-green-100 text-green-800',
@@ -63,154 +62,36 @@ function formatDate(dateStr: string): string {
   })
 }
 
-// ---- Google Calendar Modal ----
+// ---- Google Calendar URL builder ----
 
-interface CalendarModalProps {
-  meeting: Meeting
-  allProfiles: Profile[]
-  accessToken: string
-  onClose: () => void
-  onSuccess: () => void
-}
+/** Build a Google Calendar "create event" URL pre-filled with meeting details.
+ *  Opens in a new tab — user creates the event from their own Google account. */
+function buildGoogleCalendarUrl(
+  title: string,
+  meetingDate: string,
+  durationHours: number,
+  location: string | null,
+  description: string | null,
+  attendeeEmails: string[]
+): string {
+  const start = new Date(meetingDate)
+  const end = new Date(start.getTime() + durationHours * 60 * 60 * 1000)
 
-function CalendarModal({ meeting, allProfiles, accessToken, onClose, onSuccess }: CalendarModalProps) {
-  const OFFICER_ROLES = new Set(['chair', 'vice_chair', 'secretary', 'treasurer', 'staff'])
-  const activeProfiles = allProfiles.filter((p) => p.is_active)
+  // Google Calendar expects: YYYYMMDDTHHmmssZ
+  const fmt = (d: Date) =>
+    d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
-  const defaultSelected = activeProfiles
-    .filter((p) => p.is_standard_attendee || OFFICER_ROLES.has(p.role))
-    .map((p) => p.id)
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${fmt(start)}/${fmt(end)}`,
+  })
 
-  const [selectedIds, setSelectedIds] = useState<string[]>(defaultSelected)
-  const [durationHours, setDurationHours] = useState(1)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  if (location) params.set('location', location)
+  if (description) params.set('details', description)
+  if (attendeeEmails.length > 0) params.set('add', attendeeEmails.join(','))
 
-  function toggle(id: string) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    )
-  }
-
-  async function handleCreate() {
-    if (selectedIds.length === 0) {
-      setError('Select at least one attendee.')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      const start = new Date(meeting.meeting_date)
-      const end = new Date(start.getTime() + durationHours * 60 * 60 * 1000)
-      const attendeeEmails = activeProfiles
-        .filter((p) => selectedIds.includes(p.id))
-        .map((p) => p.email)
-
-      await createCalendarEvent(
-        {
-          meetingId: meeting.id,
-          title: meeting.title,
-          description: meeting.description,
-          location: meeting.location,
-          startIso: start.toISOString(),
-          endIso: end.toISOString(),
-          attendeeEmails,
-        },
-        accessToken
-      )
-      onSuccess()
-    } catch (err) {
-      console.error('[CalendarModal] createCalendarEvent failed:', err)
-      setError((err as Error).message || 'Failed to create calendar event. Please try again.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">Send to Google Calendar</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">
-            ✕
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {/* Meeting summary */}
-          <div className="rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-600 space-y-0.5">
-            <p className="font-semibold text-gray-900">{meeting.title}</p>
-            <p>{formatMeetingDate(meeting.meeting_date)}</p>
-            {meeting.location && <p>{meeting.location}</p>}
-          </div>
-
-          {/* Duration */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
-              Duration
-            </label>
-            <select
-              value={durationHours}
-              onChange={(e) => setDurationHours(Number(e.target.value))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy/30"
-            >
-              {[0.5, 1, 1.5, 2, 2.5, 3].map((h) => (
-                <option key={h} value={h}>
-                  {h === 0.5 ? '30 minutes' : `${h} hour${h !== 1 ? 's' : ''}`}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Attendees */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
-              Invite ({selectedIds.length} selected)
-            </label>
-            <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
-              {activeProfiles.map((p) => (
-                <label
-                  key={p.id}
-                  className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(p.id)}
-                    onChange={() => toggle(p.id)}
-                    className="rounded border-gray-300"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{p.full_name}</p>
-                    <p className="text-xs text-gray-400 truncate">{p.email}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {error && <p className="text-xs text-red-600">{error}</p>}
-        </div>
-
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
-          <button
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreate}
-            disabled={saving || selectedIds.length === 0}
-            className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark disabled:opacity-40"
-          >
-            {saving ? 'Creating…' : 'Create Event & Send Invites'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
 }
 
 // ---- Main page ----
@@ -218,7 +99,7 @@ function CalendarModal({ meeting, allProfiles, accessToken, onClose, onSuccess }
 export default function MeetingDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { profile, isOfficer, session } = useAuth()
+  const { profile, isOfficer } = useAuth()
   const { data: memberships } = useCommittees(profile?.id)
   const { data: meeting, isLoading: meetingLoading, error: meetingError } = useMeeting(id)
   const { data: agendaItems, isLoading: agendaLoading, refetch: refetchAgenda } = useAgendaItems(id)
@@ -261,8 +142,7 @@ export default function MeetingDetailPage() {
   // General error state
   const [sectionError, setSectionError] = useState<string | null>(null)
 
-  // Calendar modal state
-  const [showCalendarModal, setShowCalendarModal] = useState(false)
+  // (Calendar handled via direct Google Calendar URL — no modal state needed)
 
   // Initialize minutes content from fetched data
   if (minutes && !minutesInitialized) {
@@ -590,25 +470,23 @@ export default function MeetingDetailPage() {
               Delete
             </button>
           )}
-          {/* Google Calendar */}
+          {/* Google Calendar — opens pre-filled event in user's own Google Calendar */}
           {canEdit && (
-            meeting.gcal_event_id ? (
-              <a
-                href={meeting.gcal_event_link ?? 'https://calendar.google.com/'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                📅 View in Calendar ↗
-              </a>
-            ) : (
-              <button
-                onClick={() => setShowCalendarModal(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                📅 Send to Calendar
-              </button>
-            )
+            <a
+              href={buildGoogleCalendarUrl(
+                meeting.title,
+                meeting.meeting_date,
+                1,
+                meeting.location,
+                meeting.description,
+                allProfiles.filter((p) => p.is_active).map((p) => p.email)
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              📅 Add to Google Calendar ↗
+            </a>
           )}
         </div>
       </div>
@@ -1056,19 +934,6 @@ export default function MeetingDetailPage() {
         />
       )}
 
-      {/* Google Calendar Modal */}
-      {showCalendarModal && canEdit && session && meeting && (
-        <CalendarModal
-          meeting={meeting}
-          allProfiles={allProfiles}
-          accessToken={session.access_token}
-          onClose={() => setShowCalendarModal(false)}
-          onSuccess={() => {
-            setShowCalendarModal(false)
-            window.location.reload()
-          }}
-        />
-      )}
     </div>
   )
 }
