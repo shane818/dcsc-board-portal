@@ -1,5 +1,8 @@
 import { supabase } from './supabase'
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
 export interface CreateCalendarEventParams {
   meetingId: string
   title: string
@@ -18,17 +21,27 @@ export interface CreateCalendarEventResult {
 export async function createCalendarEvent(
   params: CreateCalendarEventParams
 ): Promise<CreateCalendarEventResult> {
-  const { data, error } = await supabase.functions.invoke('calendar', {
-    body: params,
-    headers: { 'x-action': 'create' },
-  })
+  // Get the current session token (auto-refreshed by Supabase client)
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
 
-  if (error) {
-    throw new Error(error.message || 'Failed to invoke calendar function')
-  }
+  const res = await fetch(
+    `${SUPABASE_URL}/functions/v1/calendar?action=create`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    }
+  )
 
-  if (!data?.eventId) {
-    throw new Error(data?.error || 'Unexpected response from calendar function')
+  const data = await res.json()
+
+  if (!res.ok) {
+    throw new Error(data.error ?? `Request failed with status ${res.status}`)
   }
 
   return data as CreateCalendarEventResult

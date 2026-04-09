@@ -1,43 +1,25 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ---- CORS (identical to drive function) ----
+// ---- CORS ----
 
-const ALLOWED_ORIGINS = [
-  "https://dcsc-board-portal.vercel.app",
-  "https://dc-scores-board-portal.vercel.app",
-];
-
-function getCorsHeaders(requestOrigin: string | null): Record<string, string> {
-  const origin =
-    requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin)
-      ? requestOrigin
-      : ALLOWED_ORIGINS[0];
+function getCorsHeaders(): Record<string, string> {
   return {
-    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type",
+      "authorization, x-client-info, apikey, content-type, x-action",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Vary": "Origin",
   };
 }
 
-function jsonResponse(
-  data: unknown,
-  status = 200,
-  corsHeaders: Record<string, string>
-): Response {
+function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(), "Content-Type": "application/json" },
   });
 }
 
-function errorResponse(
-  message: string,
-  status = 400,
-  corsHeaders: Record<string, string>
-): Response {
-  return jsonResponse({ error: message }, status, corsHeaders);
+function errorResponse(message: string, status = 400): Response {
+  return jsonResponse({ error: message }, status);
 }
 
 // ---- Google Service Account Auth (calendar scope) ----
@@ -201,27 +183,24 @@ async function createCalendarEvent(
 // ---- Main handler ----
 
 Deno.serve(async (req: Request): Promise<Response> => {
-  const requestOrigin = req.headers.get("origin");
-  const corsHeaders = getCorsHeaders(requestOrigin);
-
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: getCorsHeaders() });
   }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
-    return errorResponse("Missing Authorization header", 401, corsHeaders);
+    return errorResponse("Missing Authorization header", 401);
   }
 
   const supabase = createAuthenticatedClient(authHeader);
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return errorResponse("Invalid or expired token", 401, corsHeaders);
+  if (!user) return errorResponse("Invalid or expired token", 401);
 
   const isOfficer = await checkIsOfficer(supabase, user.id);
   if (!isOfficer) {
-    return errorResponse("Only officers can create calendar events", 403, corsHeaders);
+    return errorResponse("Only officers can create calendar events", 403);
   }
 
   const url = new URL(req.url);
@@ -232,16 +211,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const payload = (await req.json()) as CreateEventPayload;
 
       if (!payload.meetingId || !payload.title || !payload.startIso || !payload.endIso) {
-        return errorResponse(
-          "Missing required fields: meetingId, title, startIso, endIso",
-          400,
-          corsHeaders
-        );
+        return errorResponse("Missing required fields: meetingId, title, startIso, endIso", 400);
       }
 
       const { eventId, eventLink } = await createCalendarEvent(payload);
 
-      // Persist event ID and link back to meetings table
       const { error: updateErr } = await supabase
         .from("meetings")
         .update({ gcal_event_id: eventId, gcal_event_link: eventLink })
@@ -251,14 +225,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
         console.error("Failed to update meetings table:", updateErr.message);
       }
 
-      return jsonResponse({ eventId, eventLink }, 201, corsHeaders);
+      return jsonResponse({ eventId, eventLink }, 201);
     }
 
-    return errorResponse("Unknown action. Supported: ?action=create (POST)", 404, corsHeaders);
+    return errorResponse("Unknown action. Supported: ?action=create (POST)", 404);
   } catch (e) {
     const msg = (e as Error).message;
     console.error("[calendar] error:", msg);
-    // Return the real error message so we can diagnose — tighten later
-    return errorResponse(msg, 500, corsHeaders);
+    return errorResponse(msg, 500);
   }
 });
