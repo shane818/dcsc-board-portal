@@ -68,12 +68,11 @@ function formatDate(dateStr: string): string {
 interface CalendarModalProps {
   meeting: Meeting
   allProfiles: Profile[]
-  accessToken: string
   onClose: () => void
   onSuccess: () => void
 }
 
-function CalendarModal({ meeting, allProfiles, accessToken, onClose, onSuccess }: CalendarModalProps) {
+function CalendarModal({ meeting, allProfiles, onClose, onSuccess }: CalendarModalProps) {
   const OFFICER_ROLES = new Set(['chair', 'vice_chair', 'secretary', 'treasurer', 'staff'])
   const activeProfiles = allProfiles.filter((p) => p.is_active)
 
@@ -106,18 +105,15 @@ function CalendarModal({ meeting, allProfiles, accessToken, onClose, onSuccess }
         .filter((p) => selectedIds.includes(p.id))
         .map((p) => p.email)
 
-      await createCalendarEvent(
-        {
-          meetingId: meeting.id,
-          title: meeting.title,
-          description: meeting.description,
-          location: meeting.location,
-          startIso: start.toISOString(),
-          endIso: end.toISOString(),
-          attendeeEmails,
-        },
-        accessToken
-      )
+      await createCalendarEvent({
+        meetingId: meeting.id,
+        title: meeting.title,
+        description: meeting.description,
+        location: meeting.location,
+        startIso: start.toISOString(),
+        endIso: end.toISOString(),
+        attendeeEmails,
+      })
       onSuccess()
     } catch (err) {
       console.error('[CalendarModal] createCalendarEvent failed:', err)
@@ -218,7 +214,7 @@ function CalendarModal({ meeting, allProfiles, accessToken, onClose, onSuccess }
 export default function MeetingDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { profile, isOfficer, session } = useAuth()
+  const { profile, isOfficer } = useAuth()
   const { data: memberships } = useCommittees(profile?.id)
   const { data: meeting, isLoading: meetingLoading, error: meetingError } = useMeeting(id)
   const { data: agendaItems, isLoading: agendaLoading, refetch: refetchAgenda } = useAgendaItems(id)
@@ -1057,11 +1053,10 @@ export default function MeetingDetailPage() {
       )}
 
       {/* Google Calendar Modal */}
-      {showCalendarModal && isOfficer && session && meeting && (
+      {showCalendarModal && canEdit && meeting && (
         <CalendarModal
           meeting={meeting}
           allProfiles={allProfiles}
-          accessToken={session.access_token}
           onClose={() => setShowCalendarModal(false)}
           onSuccess={() => {
             setShowCalendarModal(false)

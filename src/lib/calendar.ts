@@ -1,5 +1,4 @@
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1/calendar`
+import { supabase } from './supabase'
 
 export interface CreateCalendarEventParams {
   meetingId: string
@@ -17,21 +16,19 @@ export interface CreateCalendarEventResult {
 }
 
 export async function createCalendarEvent(
-  params: CreateCalendarEventParams,
-  accessToken: string
+  params: CreateCalendarEventParams
 ): Promise<CreateCalendarEventResult> {
-  const res = await fetch(`${FUNCTIONS_BASE}?action=create`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(params),
+  const { data, error } = await supabase.functions.invoke('calendar', {
+    body: params,
+    headers: { 'x-action': 'create' },
   })
 
-  const data = await res.json()
-  if (!res.ok) {
-    throw new Error(data.error ?? `Request failed with status ${res.status}`)
+  if (error) {
+    throw new Error(error.message || 'Failed to invoke calendar function')
+  }
+
+  if (!data?.eventId) {
+    throw new Error(data?.error || 'Unexpected response from calendar function')
   }
 
   return data as CreateCalendarEventResult

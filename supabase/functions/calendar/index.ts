@@ -225,7 +225,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const url = new URL(req.url);
-  const action = url.searchParams.get("action");
+  const action = url.searchParams.get("action") ?? req.headers.get("x-action");
 
   try {
     if (req.method === "POST" && action === "create") {
