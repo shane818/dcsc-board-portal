@@ -121,7 +121,7 @@ function CalendarModal({ meeting, allProfiles, accessToken, onClose, onSuccess }
       onSuccess()
     } catch (err) {
       console.error('[CalendarModal] createCalendarEvent failed:', err)
-      setError('Failed to create calendar event. Please try again.')
+      setError((err as Error).message || 'Failed to create calendar event. Please try again.')
     } finally {
       setSaving(false)
     }

@@ -106,7 +106,9 @@ async function getGoogleAccessToken(): Promise<string> {
   });
 
   if (!tokenRes.ok) {
-    throw new Error(`Google token exchange failed: ${await tokenRes.text()}`);
+    const tokenErr = await tokenRes.text();
+    console.error("[calendar] token exchange failed:", tokenErr);
+    throw new Error(`Google token exchange failed: ${tokenErr}`);
   }
 
   const { access_token, expires_in } = await tokenRes.json();
@@ -254,7 +256,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     return errorResponse("Unknown action. Supported: ?action=create (POST)", 404, corsHeaders);
   } catch (e) {
-    console.error("[calendar] error:", (e as Error).message);
-    return errorResponse("Internal error. Please try again.", 500, corsHeaders);
+    const msg = (e as Error).message;
+    console.error("[calendar] error:", msg);
+    // Return the real error message so we can diagnose — tighten later
+    return errorResponse(msg, 500, corsHeaders);
   }
 });
