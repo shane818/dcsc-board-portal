@@ -1,7 +1,5 @@
-import { supabase } from './supabase'
-
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1/calendar`
 
 export interface CreateCalendarEventParams {
   meetingId: string
@@ -19,24 +17,17 @@ export interface CreateCalendarEventResult {
 }
 
 export async function createCalendarEvent(
-  params: CreateCalendarEventParams
+  params: CreateCalendarEventParams,
+  accessToken: string
 ): Promise<CreateCalendarEventResult> {
-  // Get the current session token (auto-refreshed by Supabase client)
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) throw new Error('Not authenticated')
-
-  const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/calendar?action=create`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'apikey': SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(params),
-    }
-  )
+  const res = await fetch(`${FUNCTIONS_BASE}?action=create`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  })
 
   const data = await res.json()
 
