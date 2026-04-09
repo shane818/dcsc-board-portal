@@ -85,6 +85,7 @@ export interface Meeting {
   meeting_date: string
   location: string | null
   gcal_event_id: string | null
+  gcal_event_link: string | null
   status: MeetingStatus
   created_by: string
   created_at: string

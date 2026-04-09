@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { useConversations } from '../hooks/useConversations'
@@ -6,7 +6,45 @@ import { useMessages } from '../hooks/useMessages'
 import { useProfiles } from '../hooks/useProfiles'
 import type { ConversationWithDetails } from '../types/database'
 
-// ---- Utilities ----
+// ---- Mention utilities ----
+
+const MENTION_REGEX = /@\[([^\]]+)\]\(([^)]+)\)/g
+
+function renderMessageBody(body: string, currentUserId: string): React.ReactNode {
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  MENTION_REGEX.lastIndex = 0
+  while ((match = MENTION_REGEX.exec(body)) !== null) {
+    const [fullMatch, name, uuid] = match
+    if (match.index > lastIndex) {
+      parts.push(body.slice(lastIndex, match.index))
+    }
+    const isMe = uuid === currentUserId
+    parts.push(
+      <span
+        key={match.index}
+        className={`font-semibold rounded px-0.5 ${
+          isMe ? 'bg-yellow-100 text-yellow-800' : 'bg-white/20 underline'
+        }`}
+      >
+        @{name}
+      </span>
+    )
+    lastIndex = match.index + fullMatch.length
+  }
+  if (lastIndex < body.length) {
+    parts.push(body.slice(lastIndex))
+  }
+  return parts.length > 0 ? <>{parts}</> : <>{body}</>
+}
+
+function stripMentions(body: string): string {
+  return body.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1')
+}
+
+// ---- General utilities ----
 
 function getInitials(name: string): string {
   return name
@@ -263,6 +301,12 @@ export default function MessagesPage() {
   const [inputText, setInputText] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Mention picker state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionStartIndex, setMentionStartIndex] = useState(0)
+  const [mentionHighlight, setMentionHighlight] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
   const activeConv = conversations.find((c) => c.id === activeId) ?? null
 
   // Separate hook instance for the active conversation
@@ -277,15 +321,93 @@ export default function MessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [activeMessages])
 
+  // Mention candidates — filtered from active conversation members
+  const mentionCandidates =
+    mentionQuery !== null && activeConv
+      ? activeConv.members
+          .filter((m) => m.profile_id !== profile?.id)
+          .filter((m) =>
+            m.profile.full_name.toLowerCase().includes(mentionQuery.toLowerCase())
+          )
+          .slice(0, 6)
+      : []
+
+  // Reset highlight when candidates change
+  useEffect(() => {
+    setMentionHighlight(0)
+  }, [mentionQuery])
+
+  const insertMention = useCallback(
+    (member: { profile_id: string; profile: { full_name: string } }) => {
+      const mentionText = `@[${member.profile.full_name}](${member.profile_id})`
+      const before = inputText.slice(0, mentionStartIndex)
+      const after = inputText.slice(mentionStartIndex + 1 + (mentionQuery?.length ?? 0))
+      const newText = `${before}${mentionText} ${after}`
+      setInputText(newText)
+      setMentionQuery(null)
+      setTimeout(() => {
+        const ta = textareaRef.current
+        if (ta) {
+          const newCursor = before.length + mentionText.length + 1
+          ta.focus()
+          ta.setSelectionRange(newCursor, newCursor)
+        }
+      }, 0)
+    },
+    [inputText, mentionStartIndex, mentionQuery]
+  )
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setInputText(val)
+    const cursor = e.target.selectionStart ?? val.length
+    const textBeforeCursor = val.slice(0, cursor)
+    const match = textBeforeCursor.match(/@([^@\s]*)$/)
+    if (match) {
+      setMentionQuery(match[1])
+      setMentionStartIndex(cursor - match[0].length)
+    } else {
+      setMentionQuery(null)
+    }
+  }
+
   async function handleSend() {
     const text = inputText.trim()
     if (!text) return
     setInputText('')
+    setMentionQuery(null)
     await send(text)
     refetch()
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Mention picker navigation
+    if (mentionQuery !== null && mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionHighlight((h) => (h + 1) % mentionCandidates.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionHighlight((h) => (h - 1 + mentionCandidates.length) % mentionCandidates.length)
+        return
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        insertMention(mentionCandidates[mentionHighlight])
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        insertMention(mentionCandidates[mentionHighlight])
+        return
+      }
+      if (e.key === 'Escape') {
+        setMentionQuery(null)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -362,7 +484,7 @@ export default function MessagesPage() {
                       )}
                     </div>
                     <p className={`text-xs truncate mt-0.5 ${isUnread ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
-                      {conv.last_message?.body ?? 'No messages yet'}
+                      {conv.last_message ? stripMentions(conv.last_message.body) : 'No messages yet'}
                     </p>
                   </div>
 
@@ -446,7 +568,7 @@ export default function MessagesPage() {
                               : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'
                           }`}
                         >
-                          {msg.body}
+                          {renderMessageBody(msg.body, profile?.id ?? '')}
                         </div>
                         <p className="text-[10px] text-gray-400 mt-0.5 px-1">
                           {formatTime(msg.created_at)}
@@ -460,13 +582,37 @@ export default function MessagesPage() {
             </div>
 
             {/* Input bar */}
-            <div className="bg-white border-t border-gray-200 px-4 py-3">
+            <div className="relative bg-white border-t border-gray-200 px-4 py-3">
+              {/* Mention picker dropdown */}
+              {mentionQuery !== null && mentionCandidates.length > 0 && (
+                <div className="absolute bottom-full left-4 right-4 mb-1 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden z-20">
+                  <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                    Mention a member
+                  </p>
+                  {mentionCandidates.map((m, i) => (
+                    <button
+                      key={m.profile_id}
+                      onMouseDown={(e) => { e.preventDefault(); insertMention(m) }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                        i === mentionHighlight ? 'bg-navy/10' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-navy/15 text-navy text-[10px] font-bold">
+                        {getInitials(m.profile.full_name)}
+                      </div>
+                      <span className="font-medium text-gray-900">{m.profile.full_name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="flex items-end gap-2">
                 <textarea
+                  ref={textareaRef}
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
+                  placeholder="Type a message… (@ to mention, Enter to send)"
                   rows={1}
                   className="flex-1 resize-none rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy/30 max-h-32 overflow-y-auto"
                   style={{ minHeight: '42px' }}
