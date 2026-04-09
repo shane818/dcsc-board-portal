@@ -149,18 +149,28 @@ async function createCalendarEvent(
   const calendarId = Deno.env.get("GOOGLE_CALENDAR_ID");
   if (!calendarId) throw new Error("GOOGLE_CALENDAR_ID secret not set");
 
+  // Build description: prepend attendee list so members know who's invited
+  let description = "";
+  if (payload.attendeeEmails.length > 0) {
+    description += "Invited:\n" + payload.attendeeEmails.map((e) => `• ${e}`).join("\n") + "\n\n";
+  }
+  if (payload.description) {
+    description += payload.description;
+  }
+
+  // Note: Service accounts cannot add attendees without Domain-Wide Delegation.
+  // Instead, we create the event on the shared org calendar (visible to all members)
+  // and list attendees in the description.
   const body = {
     summary: payload.title,
-    ...(payload.description ? { description: payload.description } : {}),
+    ...(description ? { description } : {}),
     ...(payload.location ? { location: payload.location } : {}),
     start: { dateTime: payload.startIso },
     end: { dateTime: payload.endIso },
-    attendees: payload.attendeeEmails.map((email) => ({ email })),
   };
 
   const url =
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events` +
-    `?sendUpdates=all`;
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -188,6 +198,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const authHeader = req.headers.get("Authorization");
+  console.log("[calendar] authHeader present:", !!authHeader);
+  console.log("[calendar] authHeader prefix:", authHeader?.substring(0, 20));
+  console.log("[calendar] SUPABASE_URL:", Deno.env.get("SUPABASE_URL"));
+  console.log("[calendar] SUPABASE_ANON_KEY present:", !!Deno.env.get("SUPABASE_ANON_KEY"));
+
   if (!authHeader) {
     return errorResponse("Missing Authorization header", 401);
   }
@@ -195,8 +210,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const supabase = createAuthenticatedClient(authHeader);
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
-  if (!user) return errorResponse("Invalid or expired token", 401);
+  console.log("[calendar] getUser result:", user?.id ?? "null", "error:", authError?.message ?? "none");
+  if (!user) return errorResponse(`Invalid or expired token. Auth error: ${authError?.message ?? "user is null"}`, 401);
 
   const isOfficer = await checkIsOfficer(supabase, user.id);
   if (!isOfficer) {
