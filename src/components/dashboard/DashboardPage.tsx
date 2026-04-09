@@ -3,6 +3,7 @@ import MyCommittees from './MyCommittees'
 import UpcomingMeetings from './UpcomingMeetings'
 import MyActionItems from './MyActionItems'
 import RecentAnnouncements from './RecentAnnouncements'
+import RecentMessages from './RecentMessages'
 
 export default function DashboardPage() {
   const { profile } = useAuth()
@@ -21,6 +22,7 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <UpcomingMeetings />
         <MyActionItems />
+        <RecentMessages />
         <MyCommittees />
         <RecentAnnouncements />
       </div>
