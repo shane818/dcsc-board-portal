@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCommittees } from '../hooks/useCommittees'
+import { useAllCommittees } from '../hooks/useAllCommittees'
 import { useMeeting } from '../hooks/useMeeting'
 import { supabase } from '../lib/supabase'
 
@@ -12,6 +13,7 @@ export default function MeetingForm() {
 
   const { profile, isOfficer } = useAuth()
   const { data: memberships } = useCommittees(profile?.id)
+  const { data: allCommittees } = useAllCommittees()
   const { data: existingMeeting, isLoading: meetingLoading } = useMeeting(id)
 
   const [committeeId, setCommitteeId] = useState<string>('')
@@ -38,10 +40,10 @@ export default function MeetingForm() {
     }
   }, [existingMeeting])
 
-  // Committees the user can create meetings for
-  const availableCommittees = memberships.filter(
-    (m) => isOfficer || m.role === 'chair'
-  )
+  // Officers see all active committees; committee chairs see only their own
+  const availableCommittees = isOfficer
+    ? allCommittees.filter((c) => c.is_active)
+    : memberships.filter((m) => m.role === 'chair').map((m) => m.committee)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -127,10 +129,10 @@ export default function MeetingForm() {
               value={committeeId}
               onChange={(e) => setCommitteeId(e.target.value)}
             >
-              {isOfficer && <option value="">Full Board</option>}
-              {availableCommittees.map((m) => (
-                <option key={m.committee.id} value={m.committee.id}>
-                  {m.committee.name}
+              <option value="">Full Board</option>
+              {availableCommittees.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
                 </option>
               ))}
             </select>

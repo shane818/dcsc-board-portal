@@ -591,7 +591,7 @@ export default function MeetingDetailPage() {
             </button>
           )}
           {/* Google Calendar */}
-          {isOfficer && (
+          {canEdit && (
             meeting.gcal_event_id ? (
               <a
                 href={meeting.gcal_event_link ?? 'https://calendar.google.com/'}
