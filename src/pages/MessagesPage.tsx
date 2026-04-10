@@ -559,7 +559,7 @@ export default function MessagesPage() {
                   return (
                     <div
                       key={msg.id}
-                      className={`group/msg flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                      className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
                     >
                       {/* Avatar */}
                       {!isMe && (
@@ -576,8 +576,8 @@ export default function MessagesPage() {
                           </p>
                         )}
 
-                        {/* Message bubble + reaction trigger */}
-                        <div className="relative">
+                        {/* Message bubble row: bubble + emoji trigger inline */}
+                        <div className={`group flex items-center gap-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                           <div
                             className={`rounded-2xl px-3.5 py-2 text-sm ${
                               isMe
@@ -588,36 +588,38 @@ export default function MessagesPage() {
                             {renderMessageBody(msg.body, profile?.id ?? '')}
                           </div>
 
-                          {/* Emoji add button — visible on hover */}
-                          <button
-                            onClick={() => setEmojiPickerMsgId(emojiPickerMsgId === msg.id ? null : msg.id)}
-                            className={`absolute ${isMe ? '-left-7' : '-right-7'} top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full bg-gray-100 text-xs hover:bg-gray-200 transition-opacity ${
-                              emojiPickerMsgId === msg.id ? 'opacity-100' : 'opacity-0 group-hover/msg:opacity-100'
-                            }`}
-                            title="Add reaction"
-                          >
-                            +
-                          </button>
-
-                          {/* Quick emoji picker */}
-                          {emojiPickerMsgId === msg.id && (
-                            <div
-                              className={`absolute ${isMe ? 'right-0' : 'left-0'} -top-10 z-30 flex items-center gap-0.5 rounded-full bg-white shadow-lg border border-gray-200 px-1.5 py-1`}
+                          {/* Emoji add button — appears on hover next to the bubble */}
+                          <div className="relative">
+                            <button
+                              onClick={() => setEmojiPickerMsgId(emojiPickerMsgId === msg.id ? null : msg.id)}
+                              className={`h-6 w-6 flex items-center justify-center rounded-full bg-gray-100 text-xs hover:bg-gray-200 transition-opacity ${
+                                emojiPickerMsgId === msg.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                              }`}
+                              title="Add reaction"
                             >
-                              {QUICK_EMOJIS.map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  onClick={() => {
-                                    toggleReaction(msg.id, emoji)
-                                    setEmojiPickerMsgId(null)
-                                  }}
-                                  className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-base transition-transform hover:scale-125"
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                              +
+                            </button>
+
+                            {/* Quick emoji picker */}
+                            {emojiPickerMsgId === msg.id && (
+                              <div
+                                className={`absolute ${isMe ? 'right-0' : 'left-0'} bottom-full mb-1 z-30 flex items-center gap-0.5 rounded-full bg-white shadow-lg border border-gray-200 px-1.5 py-1`}
+                              >
+                                {QUICK_EMOJIS.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => {
+                                      toggleReaction(msg.id, emoji)
+                                      setEmojiPickerMsgId(null)
+                                    }}
+                                    className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-base transition-transform hover:scale-125"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Reaction pills */}
