@@ -308,6 +308,8 @@ export default function MessagesPage() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionStartIndex, setMentionStartIndex] = useState(0)
   const [mentionHighlight, setMentionHighlight] = useState(0)
+  // Track inserted mentions: display text → uuid mapping
+  const pendingMentions = useRef<{ name: string; id: string }[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const activeConv = conversations.find((c) => c.id === activeId) ?? null
@@ -345,23 +347,28 @@ export default function MessagesPage() {
     setMentionHighlight(0)
   }, [mentionQuery])
 
-  // Close emoji picker when switching conversations
+  // Reset state when switching conversations
   useEffect(() => {
     setEmojiPickerMsgId(null)
+    pendingMentions.current = []
   }, [activeId])
 
   const insertMention = useCallback(
     (member: { profile_id: string; profile: { full_name: string } }) => {
-      const mentionText = `@[${member.profile.full_name}](${member.profile_id})`
+      const displayText = `@${member.profile.full_name}`
       const before = inputText.slice(0, mentionStartIndex)
       const after = inputText.slice(mentionStartIndex + 1 + (mentionQuery?.length ?? 0))
-      const newText = `${before}${mentionText} ${after}`
+      const newText = `${before}${displayText} ${after}`
       setInputText(newText)
       setMentionQuery(null)
+      // Track this mention for conversion on send
+      if (!pendingMentions.current.some((m) => m.id === member.profile_id)) {
+        pendingMentions.current.push({ name: member.profile.full_name, id: member.profile_id })
+      }
       setTimeout(() => {
         const ta = textareaRef.current
         if (ta) {
-          const newCursor = before.length + mentionText.length + 1
+          const newCursor = before.length + displayText.length + 1
           ta.focus()
           ta.setSelectionRange(newCursor, newCursor)
         }
@@ -385,10 +392,15 @@ export default function MessagesPage() {
   }
 
   async function handleSend() {
-    const text = inputText.trim()
+    let text = inputText.trim()
     if (!text) return
+    // Convert display mentions (@Name) to storage format (@[Name](uuid))
+    for (const m of pendingMentions.current) {
+      text = text.replaceAll(`@${m.name}`, `@[${m.name}](${m.id})`)
+    }
     setInputText('')
     setMentionQuery(null)
+    pendingMentions.current = []
     await send(text)
     refetch()
   }
