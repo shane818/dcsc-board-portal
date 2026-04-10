@@ -265,9 +265,11 @@ export interface BoardResource {
   id: string
   title: string
   description: string | null
-  drive_url: string
+  drive_url: string | null
   category: string
   sort_order: number
+  is_folder: boolean
+  parent_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
