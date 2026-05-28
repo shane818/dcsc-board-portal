@@ -40,6 +40,8 @@ export interface Profile {
   term_start_date: string | null
   job_title: string | null
   is_standard_attendee: boolean
+  invite_pending: boolean
+  accepted_at: string | null
   created_at: string
   updated_at: string
 }

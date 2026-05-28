@@ -5,6 +5,7 @@ import { useAllProfiles } from '../hooks/useAllProfiles'
 import { useAllCommittees } from '../hooks/useAllCommittees'
 import { useCommitteeMembers } from '../hooks/useCommitteeMembers'
 import { useProfiles } from '../hooks/useProfiles'
+import { inviteMember } from '../lib/inviteMember'
 import type { BoardRole, CommitteeRole } from '../types/database'
 
 type Tab = 'roster' | 'committees'
@@ -93,6 +94,7 @@ function useInvites() {
 }
 
 function RosterTab({ currentUserId }: { currentUserId: string }) {
+  const { session } = useAuth()
   const { data: profiles, isLoading, error, refetch } = useAllProfiles()
   const { data: invites, refetch: refetchInvites } = useInvites()
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -106,6 +108,34 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
   const [newTermStart, setNewTermStart] = useState('')
   const [newJobTitle, setNewJobTitle] = useState('')
   const [addingSaving, setAddingSaving] = useState(false)
+  const [activatingId, setActivatingId] = useState<string | null>(null)
+
+  async function handleActivateInvite(inv: BoardInvite) {
+    if (!session) {
+      setSaveError('Your session expired. Please refresh and try again.')
+      return
+    }
+    setActivatingId(inv.id)
+    setSaveError(null)
+    try {
+      await inviteMember(
+        {
+          email: inv.email,
+          full_name: inv.full_name,
+          role: inv.role,
+          phone: inv.phone ?? null,
+          term_start_date: inv.term_start_date ?? null,
+          job_title: inv.job_title ?? null,
+        },
+        session.access_token
+      )
+      refetch()         // pending profile now appears in roster
+      refetchInvites()  // invite row was consumed by the trigger
+    } catch (err) {
+      setSaveError((err as Error).message || 'Failed to activate invite.')
+    }
+    setActivatingId(null)
+  }
 
   async function handleAddMember(e: React.FormEvent) {
     e.preventDefault()
@@ -113,37 +143,26 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
     setAddingSaving(true)
     setSaveError(null)
 
-    // Check if this email already has a profile (already signed in)
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', newEmail.trim().toLowerCase())
-      .maybeSingle()
-
-    if (existing) {
-      setSaveError('This email already has an account. Change their role in the roster below.')
+    if (!session) {
+      setSaveError('Your session expired. Please refresh and try again.')
       setAddingSaving(false)
       return
     }
 
-    // Add to invites table — when they sign in with Google, the trigger assigns the role
-    const { error } = await supabase.from('board_invites').insert({
-      email: newEmail.trim().toLowerCase(),
-      full_name: newName.trim(),
-      role: newRole,
-      invited_by: currentUserId,
-      phone: newPhone.trim() || null,
-      term_start_date: newTermStart || null,
-      job_title: newJobTitle.trim() || null,
-    })
-    if (error) {
-      if (error.message.includes('duplicate')) {
-        setSaveError('This email has already been invited.')
-      } else {
-        console.error('[AdminPage] invite failed:', error)
-        setSaveError('Failed to invite member. Please try again.')
-      }
-    } else {
+    // Pre-create a pending member via the Edge Function. The person becomes
+    // referenceable immediately and their profile is ready on first login.
+    try {
+      await inviteMember(
+        {
+          email: newEmail.trim().toLowerCase(),
+          full_name: newName.trim(),
+          role: newRole,
+          phone: newPhone.trim() || null,
+          term_start_date: newTermStart || null,
+          job_title: newJobTitle.trim() || null,
+        },
+        session.access_token
+      )
       setNewName('')
       setNewEmail('')
       setNewRole('board_member')
@@ -151,7 +170,10 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
       setNewTermStart('')
       setNewJobTitle('')
       setShowAddForm(false)
+      refetch()         // refresh roster — the new pending profile now appears
       refetchInvites()
+    } catch (err) {
+      setSaveError((err as Error).message || 'Failed to invite member. Please try again.')
     }
     setAddingSaving(false)
   }
@@ -357,6 +379,14 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
                     {p.id === currentUserId && (
                       <span className="ml-2 text-xs text-gray-400">(you)</span>
                     )}
+                    {p.invite_pending && (
+                      <span
+                        className="ml-2 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800"
+                        title="Invited but has not logged in yet. Can be added to committees, meetings, and minutes now."
+                      >
+                        Pending
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">{p.email}</td>
                   <td className="px-6 py-4">
@@ -453,7 +483,8 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
             Pending Invites ({invites.length})
           </h3>
           <p className="mb-3 text-xs text-yellow-700">
-            Awaiting first login. All pre-filled details will be applied automatically when they sign in with Google.
+            These older invites haven't been activated yet. Click "Activate now" to pre-create the
+            profile so the person can be added to committees, meetings, and minutes before they log in.
           </p>
           <div className="space-y-3">
             {invites.map((inv) => (
@@ -479,15 +510,24 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={async () => {
-                      await supabase.from('board_invites').delete().eq('id', inv.id)
-                      refetchInvites()
-                    }}
-                    className="shrink-0 text-xs text-red-400 hover:text-red-600"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <button
+                      onClick={() => handleActivateInvite(inv)}
+                      disabled={activatingId === inv.id}
+                      className="rounded-lg bg-navy px-2.5 py-1 text-xs font-medium text-white hover:bg-navy-dark disabled:opacity-50"
+                    >
+                      {activatingId === inv.id ? 'Activating…' : 'Activate now'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await supabase.from('board_invites').delete().eq('id', inv.id)
+                        refetchInvites()
+                      }}
+                      className="text-xs text-red-400 hover:text-red-600"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

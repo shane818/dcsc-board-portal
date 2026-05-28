@@ -20,6 +20,8 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
     .eq('id', userId)
     .single()
 
+  let profile = (data as Profile) ?? null
+
   if (error && error.code === 'PGRST116') {
     // Profile not yet created by trigger — retry once after a short delay
     await new Promise((r) => setTimeout(r, 500))
@@ -28,10 +30,20 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
       .select('*')
       .eq('id', userId)
       .single()
-    return (retry.data as Profile) ?? null
+    profile = (retry.data as Profile) ?? null
   }
 
-  return (data as Profile) ?? null
+  // First real login: a pre-created (pending) profile becomes accepted.
+  if (profile && profile.invite_pending) {
+    const acceptedAt = new Date().toISOString()
+    await supabase
+      .from('profiles')
+      .update({ invite_pending: false, accepted_at: acceptedAt })
+      .eq('id', userId)
+    profile = { ...profile, invite_pending: false, accepted_at: acceptedAt }
+  }
+
+  return profile
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
