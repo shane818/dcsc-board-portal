@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import DriveViewer from '../components/DriveViewer'
 import AttendanceSection from '../components/meetings/AttendanceSection'
+import PendingMinutesSection from '../components/meetings/PendingMinutesSection'
 import VotePanel from '../components/meetings/VotePanel'
 import { useCommittees } from '../hooks/useCommittees'
 import { useMeeting } from '../hooks/useMeeting'
@@ -601,6 +602,12 @@ export default function MeetingDetailPage() {
       <AttendanceSection
         meetingId={id!}
         profiles={allProfiles}
+        canEdit={!!canEdit}
+      />
+
+      {/* Pending Minutes for Approval — only renders if drafts are linked */}
+      <PendingMinutesSection
+        reviewingMeetingId={id!}
         canEdit={!!canEdit}
       />
 
