@@ -89,15 +89,30 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
     setApprovingId(entry.minutes_id)
     setError(null)
     try {
-      // 1. Archive to Drive (PDF generation)
-      const archived = await archiveMinutes(
-        {
-          meetingTitle: entry.meeting_title,
-          meetingDate: entry.meeting_date,
-          markdown: entry.content,
-        },
-        session.access_token
-      )
+      // Try auto-archive first; if it fails, prompt for manual URL.
+      let finalUrl: string | null = null
+      let attemptedAutoArchive = true
+      try {
+        const archived = await archiveMinutes(
+          {
+            meetingTitle: entry.meeting_title,
+            meetingDate: entry.meeting_date,
+            markdown: entry.content,
+          },
+          session.access_token
+        )
+        finalUrl = archived.webViewLink
+      } catch (autoErr) {
+        const manualUrl = window.prompt(
+          `Auto-archive failed for "${entry.meeting_title}": ${
+            (autoErr as Error).message ?? 'unknown'
+          }\n\nPaste the Google Drive link to the approved minutes document, then click OK:`
+        )
+        if (!manualUrl || !manualUrl.trim()) {
+          throw new Error('Approval cancelled — no document link provided.')
+        }
+        finalUrl = manualUrl.trim()
+      }
 
       // 2. Find the Approved Minutes Board Resources folder
       const { data: folderRow } = await supabase
@@ -113,8 +128,10 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
       // 3. Create Board Resources entry
       await supabase.from('board_resources').insert({
         title: `${entry.meeting_title} — ${dateLabel}`,
-        description: 'Approved meeting minutes (PDF)',
-        drive_url: archived.webViewLink,
+        description: attemptedAutoArchive
+          ? 'Approved meeting minutes (PDF, auto-archived)'
+          : 'Approved meeting minutes',
+        drive_url: finalUrl,
         category: 'Governance',
         is_folder: false,
         parent_id: folderRow?.id ?? null,
@@ -128,7 +145,7 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
           status: 'approved',
           approved_by: profile.id,
           approved_at: new Date().toISOString(),
-          drive_file_url: archived.webViewLink,
+          drive_file_url: finalUrl,
         })
         .eq('id', entry.minutes_id)
       if (approveErr) throw approveErr

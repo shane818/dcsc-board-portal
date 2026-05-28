@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import DriveViewer from '../components/DriveViewer'
 import AttendanceSection from '../components/meetings/AttendanceSection'
 import PendingMinutesSection from '../components/meetings/PendingMinutesSection'
+import MeetingMaterialsSection from '../components/meetings/MeetingMaterialsSection'
 import VotePanel from '../components/meetings/VotePanel'
 import { useCommittees } from '../hooks/useCommittees'
 import { useMeeting } from '../hooks/useMeeting'
@@ -357,45 +358,94 @@ export default function MeetingDetailPage() {
     }
   }
 
+  function handleDownloadDraft() {
+    if (!meeting) return
+    const dateLabel = new Date(meeting.meeting_date)
+      .toISOString()
+      .slice(0, 10) // YYYY-MM-DD
+    const safeTitle = meeting.title.replace(/[<>:"/\\|?*]/g, '').trim()
+    const filename = `${dateLabel} - ${safeTitle} (draft).md`
+    const blob = new Blob([minutesContent || '# Empty draft'], {
+      type: 'text/markdown;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+
   async function handleApproveMinutes() {
     if (!minutes || !profile || !meeting || !session) return
     if (!minutesContent.trim()) {
       setSectionError('Cannot approve empty minutes. Add content first.')
       return
     }
+
+    // Determine the final URL to archive in Board Resources.
+    // Priority: (1) Drive URL provided by Secretary; (2) try auto-archive; (3) prompt user.
+    let finalUrl: string | null = minutesDriveUrl.trim() || null
+    let attemptedAutoArchive = false
+
+    const hasManualUrl = !!finalUrl
     if (
       !window.confirm(
-        'Approve these minutes? This will:\n\n' +
-          '1. Save the current draft content\n' +
-          '2. Generate a PDF and archive it in the "Approved Minutes" folder in Drive\n' +
-          '3. Create an entry in Board Resources linking to the PDF\n' +
-          '4. Mark these minutes as approved\n\n' +
-          'Approval is reversible (you can revert to draft later), but the archived PDF will remain.'
+        hasManualUrl
+          ? 'Approve these minutes?\n\n' +
+              `The shared minutes document link you provided will be saved to Board Resources:\n${finalUrl}\n\n` +
+              'Approval is reversible (you can revert to draft later).'
+          : 'Approve these minutes?\n\n' +
+              'You did not provide a shared minutes document link. The system will try to auto-generate a PDF in the Approved Minutes Drive folder. ' +
+              'If that fails (e.g. Drive is not set up yet), you will be prompted to paste a link manually.\n\n' +
+              'Approval is reversible (you can revert to draft later).'
       )
     ) {
       return
     }
+
     setMinutesSaving(true)
     setSectionError(null)
+
     try {
-      // 1. Persist the current draft content first (in case the Secretary edited but didn't click "Save Draft")
+      // 1. Persist current draft content first
       const { error: saveErr } = await supabase
         .from('meeting_minutes')
         .update({ content: minutesContent, drive_file_url: minutesDriveUrl || null })
         .eq('id', minutes.id)
       if (saveErr) throw saveErr
 
-      // 2. Call archive-minutes Edge Function (generates PDF, uploads to Drive folder)
-      const archived = await archiveMinutes(
-        {
-          meetingTitle: meeting.title,
-          meetingDate: meeting.meeting_date,
-          markdown: minutesContent,
-        },
-        session.access_token
-      )
+      // 2. If no manual URL, attempt auto-archive
+      if (!finalUrl) {
+        attemptedAutoArchive = true
+        try {
+          const archived = await archiveMinutes(
+            {
+              meetingTitle: meeting.title,
+              meetingDate: meeting.meeting_date,
+              markdown: minutesContent,
+            },
+            session.access_token
+          )
+          finalUrl = archived.webViewLink
+        } catch (autoErr) {
+          // Auto-archive failed — prompt user for a manual URL
+          const manualUrl = window.prompt(
+            'Auto-archive failed: ' +
+              ((autoErr as Error).message ?? 'unknown error') +
+              '\n\nPaste the Google Drive link to the approved minutes document instead, then click OK:'
+          )
+          if (!manualUrl || !manualUrl.trim()) {
+            throw new Error('Approval cancelled — no document link provided.')
+          }
+          finalUrl = manualUrl.trim()
+        }
+      }
 
-      // 3. Find the "Approved Minutes" folder in board_resources to nest the new entry under it
+      // 3. Find the "Approved Minutes" folder in Board Resources to nest the new entry under it
       const { data: folderRow } = await supabase
         .from('board_resources')
         .select('id')
@@ -404,7 +454,7 @@ export default function MeetingDetailPage() {
         .is('parent_id', null)
         .maybeSingle()
 
-      // 4. Create a Board Resources entry pointing to the PDF
+      // 4. Create a Board Resources entry pointing to the final URL
       const meetingDateLabel = new Date(meeting.meeting_date).toLocaleDateString('en-US', {
         month: 'long',
         day: 'numeric',
@@ -412,22 +462,24 @@ export default function MeetingDetailPage() {
       })
       await supabase.from('board_resources').insert({
         title: `${meeting.title} — ${meetingDateLabel}`,
-        description: 'Approved meeting minutes (PDF)',
-        drive_url: archived.webViewLink,
+        description: attemptedAutoArchive
+          ? 'Approved meeting minutes (PDF, auto-archived)'
+          : 'Approved meeting minutes',
+        drive_url: finalUrl,
         category: 'Governance',
         is_folder: false,
         parent_id: folderRow?.id ?? null,
         created_by: profile.id,
       })
 
-      // 5. Mark minutes as approved and store the archived PDF URL
+      // 5. Mark minutes as approved and store the final URL
       const { error: approveErr } = await supabase
         .from('meeting_minutes')
         .update({
           status: 'approved',
           approved_by: profile.id,
           approved_at: new Date().toISOString(),
-          drive_file_url: archived.webViewLink, // overwrite with the archived PDF link
+          drive_file_url: finalUrl,
         })
         .eq('id', minutes.id)
       if (approveErr) throw approveErr
@@ -436,9 +488,7 @@ export default function MeetingDetailPage() {
       refetchMinutes()
     } catch (err) {
       setSectionError(
-        'Approval failed: ' +
-          ((err as Error).message ?? 'unknown error') +
-          '. The Drive folder may not be shared with the service account yet.'
+        'Approval failed: ' + ((err as Error).message ?? 'unknown error')
       )
     } finally {
       setMinutesSaving(false)
@@ -604,6 +654,9 @@ export default function MeetingDetailPage() {
         profiles={allProfiles}
         canEdit={!!canEdit}
       />
+
+      {/* Meeting Materials — pre-reads, reports, presentations (visible pre-meeting) */}
+      <MeetingMaterialsSection meetingId={id!} />
 
       {/* Pending Minutes for Approval — only renders if drafts are linked */}
       <PendingMinutesSection
@@ -967,17 +1020,27 @@ export default function MeetingDetailPage() {
             <div>
               <div className="flex items-center justify-between">
                 <label className="block text-sm font-medium text-gray-700">Content (Markdown)</label>
-                {canManageMinutes && (
+                <div className="flex items-center gap-3">
+                  {canManageMinutes && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateTemplate}
+                      disabled={minutesSaving}
+                      className="text-xs font-medium text-navy hover:text-navy-dark disabled:opacity-50"
+                      title="Generate a draft template using meeting data (attendance, agenda, motions)"
+                    >
+                      ✨ Generate from Template
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={handleGenerateTemplate}
-                    disabled={minutesSaving}
-                    className="text-xs font-medium text-navy hover:text-navy-dark disabled:opacity-50"
-                    title="Generate a draft template using meeting data (attendance, agenda, motions)"
+                    onClick={handleDownloadDraft}
+                    className="text-xs font-medium text-navy hover:text-navy-dark"
+                    title="Download current draft as a Markdown file"
                   >
-                    ✨ Generate from Template
+                    ⬇ Download Draft
                   </button>
-                )}
+                </div>
               </div>
               <textarea
                 rows={18}
@@ -987,14 +1050,19 @@ export default function MeetingDetailPage() {
                 placeholder="Click 'Generate from Template' to pre-fill, or write minutes manually in Markdown."
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Google Drive URL (optional)
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <label className="block text-sm font-semibold text-gray-900">
+                Link to shared minutes document
               </label>
+              <p className="mt-0.5 text-xs text-gray-600">
+                Paste the Google Drive (or Docs) link where the polished minutes live.
+                When the minutes are approved, this link will be saved to Board Resources
+                under Approved Minutes. Leave blank to try auto-archiving the markdown content above.
+              </p>
               <input
                 type="text"
-                placeholder="https://docs.google.com/..."
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                placeholder="https://docs.google.com/document/d/..."
+                className="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                 value={minutesDriveUrl}
                 onChange={(e) => setMinutesDriveUrl(e.target.value)}
               />
