@@ -13,6 +13,8 @@ import { useProfiles } from '../hooks/useProfiles'
 import { useAllProfiles } from '../hooks/useAllProfiles'
 import { useMeetingAttendees } from '../hooks/useMeetingAttendees'
 import { supabase } from '../lib/supabase'
+import { buildMinutesTemplate } from '../lib/minutesTemplate'
+import { archiveMinutes } from '../lib/archiveMinutes'
 import { useNavigate } from 'react-router-dom'
 import type { AgendaItemStatus, ActionItemPriority, MeetingStatus } from '../types/database'
 
@@ -99,7 +101,7 @@ function buildGoogleCalendarUrl(
 export default function MeetingDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { profile, isOfficer } = useAuth()
+  const { profile, isOfficer, session } = useAuth()
   const { data: memberships } = useCommittees(profile?.id)
   const { data: meeting, isLoading: meetingLoading, error: meetingError } = useMeeting(id)
   const { data: agendaItems, isLoading: agendaLoading, refetch: refetchAgenda } = useAgendaItems(id)
@@ -183,7 +185,15 @@ export default function MeetingDetailPage() {
     if (!id) return
     setSectionError(null)
     try {
-      const { error } = await supabase.from('meetings').update({ status }).eq('id', id)
+      // When marking as completed, capture the adjournment timestamp (if not already set).
+      // When reopening (scheduled), clear it so it gets re-captured at next End.
+      const updates: Record<string, unknown> = { status }
+      if (status === 'completed' && !meeting?.adjourned_at) {
+        updates.adjourned_at = new Date().toISOString()
+      } else if (status === 'scheduled') {
+        updates.adjourned_at = null
+      }
+      const { error } = await supabase.from('meetings').update(updates).eq('id', id)
       if (error) throw error
       window.location.reload()
     } catch (err) {
@@ -323,24 +333,112 @@ export default function MeetingDetailPage() {
     }
   }
 
-  async function handleApproveMinutes() {
-    if (!minutes || !profile) return
+  async function handleGenerateTemplate() {
+    if (!id) return
+    if (minutesContent.trim().length > 0) {
+      if (
+        !window.confirm(
+          'This will replace the current draft content with a generated template. Continue?'
+        )
+      ) {
+        return
+      }
+    }
     setMinutesSaving(true)
     setSectionError(null)
     try {
-      const { error } = await supabase
+      const template = await buildMinutesTemplate(id)
+      setMinutesContent(template)
+    } catch (err) {
+      setSectionError((err as Error).message)
+    } finally {
+      setMinutesSaving(false)
+    }
+  }
+
+  async function handleApproveMinutes() {
+    if (!minutes || !profile || !meeting || !session) return
+    if (!minutesContent.trim()) {
+      setSectionError('Cannot approve empty minutes. Add content first.')
+      return
+    }
+    if (
+      !window.confirm(
+        'Approve these minutes? This will:\n\n' +
+          '1. Save the current draft content\n' +
+          '2. Generate a PDF and archive it in the "Approved Minutes" folder in Drive\n' +
+          '3. Create an entry in Board Resources linking to the PDF\n' +
+          '4. Mark these minutes as approved\n\n' +
+          'Approval is reversible (you can revert to draft later), but the archived PDF will remain.'
+      )
+    ) {
+      return
+    }
+    setMinutesSaving(true)
+    setSectionError(null)
+    try {
+      // 1. Persist the current draft content first (in case the Secretary edited but didn't click "Save Draft")
+      const { error: saveErr } = await supabase
+        .from('meeting_minutes')
+        .update({ content: minutesContent, drive_file_url: minutesDriveUrl || null })
+        .eq('id', minutes.id)
+      if (saveErr) throw saveErr
+
+      // 2. Call archive-minutes Edge Function (generates PDF, uploads to Drive folder)
+      const archived = await archiveMinutes(
+        {
+          meetingTitle: meeting.title,
+          meetingDate: meeting.meeting_date,
+          markdown: minutesContent,
+        },
+        session.access_token
+      )
+
+      // 3. Find the "Approved Minutes" folder in board_resources to nest the new entry under it
+      const { data: folderRow } = await supabase
+        .from('board_resources')
+        .select('id')
+        .eq('title', 'Approved Minutes')
+        .eq('is_folder', true)
+        .is('parent_id', null)
+        .maybeSingle()
+
+      // 4. Create a Board Resources entry pointing to the PDF
+      const meetingDateLabel = new Date(meeting.meeting_date).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      await supabase.from('board_resources').insert({
+        title: `${meeting.title} — ${meetingDateLabel}`,
+        description: 'Approved meeting minutes (PDF)',
+        drive_url: archived.webViewLink,
+        category: 'Governance',
+        is_folder: false,
+        parent_id: folderRow?.id ?? null,
+        created_by: profile.id,
+      })
+
+      // 5. Mark minutes as approved and store the archived PDF URL
+      const { error: approveErr } = await supabase
         .from('meeting_minutes')
         .update({
           status: 'approved',
           approved_by: profile.id,
           approved_at: new Date().toISOString(),
+          drive_file_url: archived.webViewLink, // overwrite with the archived PDF link
         })
         .eq('id', minutes.id)
-      if (error) throw error
+      if (approveErr) throw approveErr
+
       setMinutesInitialized(false)
       refetchMinutes()
     } catch (err) {
-      setSectionError((err as Error).message)
+      setSectionError(
+        'Approval failed: ' +
+          ((err as Error).message ?? 'unknown error') +
+          '. The Drive folder may not be shared with the service account yet.'
+      )
     } finally {
       setMinutesSaving(false)
     }
@@ -860,12 +958,26 @@ export default function MeetingDetailPage() {
               Drafted by {minutes.drafter.full_name}
             </p>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Content</label>
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">Content (Markdown)</label>
+                {canManageMinutes && (
+                  <button
+                    type="button"
+                    onClick={handleGenerateTemplate}
+                    disabled={minutesSaving}
+                    className="text-xs font-medium text-navy hover:text-navy-dark disabled:opacity-50"
+                    title="Generate a draft template using meeting data (attendance, agenda, motions)"
+                  >
+                    ✨ Generate from Template
+                  </button>
+                )}
+              </div>
               <textarea
-                rows={10}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                rows={18}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                 value={minutesContent}
                 onChange={(e) => setMinutesContent(e.target.value)}
+                placeholder="Click 'Generate from Template' to pre-fill, or write minutes manually in Markdown."
               />
             </div>
             <div>

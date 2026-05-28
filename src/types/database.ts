@@ -77,6 +77,8 @@ export interface CommitteeMembership {
   joined_at: string
 }
 
+export type MeetingFormat = 'in_person' | 'virtual' | 'hybrid'
+
 export interface Meeting {
   id: string
   committee_id: string | null
@@ -87,6 +89,8 @@ export interface Meeting {
   gcal_event_id: string | null
   gcal_event_link: string | null
   status: MeetingStatus
+  meeting_format: MeetingFormat | null
+  adjourned_at: string | null
   created_by: string
   created_at: string
 }
@@ -96,6 +100,14 @@ export type VoteResult = 'carried' | 'failed' | 'tabled'
 export type VoteChoice = 'yes' | 'no' | 'abstain'
 export type AttendanceMode = 'in_person' | 'virtual' | 'absent'
 export type AttendeeCategory = 'board_member' | 'staff' | 'guest'
+
+export interface MeetingMinutesForReview {
+  id: string
+  reviewing_meeting_id: string
+  minutes_id: string
+  added_by: string | null
+  created_at: string
+}
 
 export interface AgendaItem {
   id: string
@@ -142,6 +154,7 @@ export interface MeetingAttendee {
   attendee_category: AttendeeCategory
   guest_name: string | null
   guest_organization: string | null
+  guest_title: string | null
   created_at: string
   updated_at: string
 }

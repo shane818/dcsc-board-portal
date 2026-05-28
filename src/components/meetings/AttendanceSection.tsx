@@ -38,6 +38,7 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
   const [showStaffPicker, setShowStaffPicker] = useState(false)
   const [showGuestForm, setShowGuestForm] = useState(false)
   const [guestName, setGuestName] = useState('')
+  const [guestTitle, setGuestTitle] = useState('')
   const [guestOrg, setGuestOrg] = useState('')
   const [guestSaving, setGuestSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -127,11 +128,13 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
       attendee_category: 'guest',
       attendance_mode: 'in_person',
       guest_name: guestName.trim(),
+      guest_title: guestTitle.trim() || null,
       guest_organization: guestOrg.trim() || null,
     })
     if (error) setError(error.message)
     else {
       setGuestName('')
+      setGuestTitle('')
       setGuestOrg('')
       setShowGuestForm(false)
     }
@@ -338,6 +341,13 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
                   />
                   <input
                     type="text"
+                    placeholder="Title (optional)"
+                    value={guestTitle}
+                    onChange={(e) => setGuestTitle(e.target.value)}
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                  />
+                  <input
+                    type="text"
                     placeholder="Organization (optional)"
                     value={guestOrg}
                     onChange={(e) => setGuestOrg(e.target.value)}
@@ -353,7 +363,7 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
                     {guestSaving ? 'Adding...' : 'Add Guest'}
                   </button>
                   <button
-                    onClick={() => { setShowGuestForm(false); setGuestName(''); setGuestOrg('') }}
+                    onClick={() => { setShowGuestForm(false); setGuestName(''); setGuestTitle(''); setGuestOrg('') }}
                     className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Cancel
@@ -369,6 +379,9 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
                   <li key={a.id} className="flex items-center justify-between py-2">
                     <div>
                       <span className="text-sm font-medium text-gray-900">{a.guest_name}</span>
+                      {a.guest_title && (
+                        <span className="ml-2 text-xs text-gray-600">{a.guest_title}</span>
+                      )}
                       {a.guest_organization && (
                         <span className="ml-2 text-xs text-gray-400">{a.guest_organization}</span>
                       )}
