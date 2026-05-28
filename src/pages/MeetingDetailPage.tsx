@@ -17,6 +17,7 @@ import { useMeetingAttendees } from '../hooks/useMeetingAttendees'
 import { supabase } from '../lib/supabase'
 import { buildMinutesTemplate } from '../lib/minutesTemplate'
 import { archiveMinutes } from '../lib/archiveMinutes'
+import { buildMeetingSummary } from '../lib/meetingSummary'
 import { useNavigate } from 'react-router-dom'
 import type { AgendaItemStatus, ActionItemPriority, MeetingStatus } from '../types/database'
 
@@ -145,6 +146,11 @@ export default function MeetingDetailPage() {
 
   // General error state
   const [sectionError, setSectionError] = useState<string | null>(null)
+
+  // Agenda summary email modal
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [summaryText, setSummaryText] = useState('')
+  const [summaryCopied, setSummaryCopied] = useState(false)
 
   // (Calendar handled via direct Google Calendar URL — no modal state needed)
 
@@ -376,6 +382,24 @@ export default function MeetingDetailPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  function handleGenerateSummary() {
+    if (!meeting) return
+    setSummaryText(buildMeetingSummary(meeting, agendaItems))
+    setSummaryCopied(false)
+    setShowSummaryModal(true)
+  }
+
+  async function handleCopySummary() {
+    try {
+      await navigator.clipboard.writeText(summaryText)
+      setSummaryCopied(true)
+      setTimeout(() => setSummaryCopied(false), 2000)
+    } catch {
+      // Clipboard API may be blocked; the textarea is selectable as a fallback
+      setSummaryCopied(false)
+    }
   }
 
 
@@ -644,6 +668,14 @@ export default function MeetingDetailPage() {
             >
               📅 Add to Google Calendar ↗
             </a>
+          )}
+          {canEdit && (
+            <button
+              onClick={handleGenerateSummary}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              ✉️ Generate Summary
+            </button>
           )}
         </div>
       </div>
@@ -1127,6 +1159,52 @@ export default function MeetingDetailPage() {
           title="Meeting Minutes"
           onClose={() => setMinutesViewerUrl(null)}
         />
+      )}
+
+      {/* Agenda Summary Email Modal */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Agenda Summary Email</h2>
+                <p className="text-xs text-gray-500">
+                  Edit as needed, then copy and paste into your email to the board.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto">
+              <textarea
+                rows={18}
+                value={summaryText}
+                onChange={(e) => setSummaryText(e.target.value)}
+                className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleCopySummary}
+                className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark"
+              >
+                {summaryCopied ? '✓ Copied!' : 'Copy to Clipboard'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
