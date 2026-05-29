@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { usePendingMinutesForReview } from '../../hooks/usePendingMinutesForReview'
 import type { PendingMinutesEntry } from '../../hooks/usePendingMinutesForReview'
 import { archiveMinutes } from '../../lib/archiveMinutes'
+import { findApprovedMinutesFolderId } from '../../lib/approvedMinutesFolder'
 
 interface Props {
   reviewingMeetingId: string
@@ -114,14 +115,8 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
         finalUrl = manualUrl.trim()
       }
 
-      // 2. Find the Approved Minutes Board Resources folder
-      const { data: folderRow } = await supabase
-        .from('board_resources')
-        .select('id')
-        .eq('title', 'Approved Minutes')
-        .eq('is_folder', true)
-        .is('parent_id', null)
-        .maybeSingle()
+      // 2. Find the approved-minutes Board Resources folder
+      const folderId = await findApprovedMinutesFolderId()
 
       const dateLabel = formatDate(entry.meeting_date)
 
@@ -134,7 +129,7 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
         drive_url: finalUrl,
         category: 'Governance',
         is_folder: false,
-        parent_id: folderRow?.id ?? null,
+        parent_id: folderId,
         created_by: profile.id,
       })
 

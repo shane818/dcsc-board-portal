@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase'
 import { buildMinutesTemplate } from '../lib/minutesTemplate'
 import { archiveMinutes } from '../lib/archiveMinutes'
 import { buildMeetingSummary } from '../lib/meetingSummary'
+import { findApprovedMinutesFolderId } from '../lib/approvedMinutesFolder'
 import { useNavigate } from 'react-router-dom'
 import type { AgendaItemStatus, ActionItemPriority, MeetingStatus } from '../types/database'
 
@@ -469,14 +470,8 @@ export default function MeetingDetailPage() {
         }
       }
 
-      // 3. Find the "Approved Minutes" folder in Board Resources to nest the new entry under it
-      const { data: folderRow } = await supabase
-        .from('board_resources')
-        .select('id')
-        .eq('title', 'Approved Minutes')
-        .eq('is_folder', true)
-        .is('parent_id', null)
-        .maybeSingle()
+      // 3. Find the approved-minutes folder in Board Resources to nest the new entry under it
+      const folderId = await findApprovedMinutesFolderId()
 
       // 4. Create a Board Resources entry pointing to the final URL
       const meetingDateLabel = new Date(meeting.meeting_date).toLocaleDateString('en-US', {
@@ -492,7 +487,7 @@ export default function MeetingDetailPage() {
         drive_url: finalUrl,
         category: 'Governance',
         is_folder: false,
-        parent_id: folderRow?.id ?? null,
+        parent_id: folderId,
         created_by: profile.id,
       })
 
