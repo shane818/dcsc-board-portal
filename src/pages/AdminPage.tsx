@@ -6,6 +6,7 @@ import { useAllCommittees } from '../hooks/useAllCommittees'
 import { useCommitteeMembers } from '../hooks/useCommitteeMembers'
 import { useProfiles } from '../hooks/useProfiles'
 import { inviteMember } from '../lib/inviteMember'
+import { deleteMember } from '../lib/deleteMember'
 import type { BoardRole, CommitteeRole } from '../types/database'
 
 type Tab = 'roster' | 'committees'
@@ -199,6 +200,27 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
       .eq('id', userId)
     if (error) { console.error('[AdminPage] toggle active failed:', error); setSaveError('Failed to update status. Please try again.') }
     else refetch()
+    setSavingId(null)
+  }
+
+  async function handleDeleteMember(p: { id: string; full_name: string; invite_pending: boolean }) {
+    if (!session) {
+      setSaveError('Your session expired. Please refresh and try again.')
+      return
+    }
+    const warning = p.invite_pending
+      ? `Delete the pending account for ${p.full_name}? This removes their profile entirely. (They haven't logged in, so no history is lost.)`
+      : `PERMANENTLY DELETE ${p.full_name}?\n\nThis wipes their profile AND all linked history (attendance, votes, action items, etc.). This cannot be undone.\n\nFor a real member who is leaving, click Cancel and use the Deactivate toggle instead — that keeps their records.`
+    if (!window.confirm(warning)) return
+
+    setSavingId(p.id)
+    setSaveError(null)
+    try {
+      await deleteMember(p.id, session.access_token)
+      refetch()
+    } catch (err) {
+      setSaveError((err as Error).message || 'Failed to delete member.')
+    }
     setSavingId(null)
   }
 
@@ -455,17 +477,27 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
                         Active
                       </span>
                     ) : (
-                      <button
-                        onClick={() => handleToggleActive(p.id, p.is_active)}
-                        disabled={savingId === p.id}
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          p.is_active
-                            ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                            : 'bg-red-50 text-red-700 hover:bg-red-100'
-                        }`}
-                      >
-                        {p.is_active ? 'Active' : 'Inactive'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleActive(p.id, p.is_active)}
+                          disabled={savingId === p.id}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            p.is_active
+                              ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                              : 'bg-red-50 text-red-700 hover:bg-red-100'
+                          }`}
+                        >
+                          {p.is_active ? 'Active' : 'Inactive'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMember(p)}
+                          disabled={savingId === p.id}
+                          className="text-xs text-gray-300 hover:text-red-500"
+                          title={p.invite_pending ? 'Delete pending account' : 'Permanently delete member (use Deactivate for real departures)'}
+                        >
+                          🗑 Delete
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
