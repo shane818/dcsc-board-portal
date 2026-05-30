@@ -262,7 +262,7 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
                     <>
                       <textarea
                         rows={14}
-                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-sans shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
                       />
@@ -283,7 +283,7 @@ export default function PendingMinutesSection({ reviewingMeetingId, canEdit }: P
                       </div>
                     </>
                   ) : (
-                    <pre className="whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-xs font-mono text-gray-700 max-h-96 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-xs font-sans text-gray-700 max-h-96 overflow-y-auto">
                       {entry.content || '(empty draft)'}
                     </pre>
                   )}

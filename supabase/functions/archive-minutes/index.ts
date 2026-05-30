@@ -157,12 +157,14 @@ function markdownToHtml(markdown: string): string {
   }
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-    body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; }
-    h1 { font-size: 18pt; margin-bottom: 8pt; }
-    h2 { font-size: 14pt; margin-top: 16pt; margin-bottom: 6pt; }
-    h3 { font-size: 12pt; margin-top: 12pt; margin-bottom: 4pt; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.6; color: #1a1a2e; }
+    h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 20pt; font-weight: bold; color: #2B2D6B; margin-bottom: 4pt; }
+    h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 13pt; font-weight: bold; color: #2B2D6B; margin-top: 18pt; margin-bottom: 4pt; border-bottom: 1pt solid #d1d5db; padding-bottom: 2pt; }
+    h3 { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: bold; color: #374151; margin-top: 12pt; margin-bottom: 2pt; }
     p { margin: 4pt 0; }
     li { margin: 2pt 0; }
+    strong { font-weight: 600; }
+    em { font-style: italic; color: #6b7280; }
   </style></head><body>${out.join("\n")}</body></html>`;
 }
 
@@ -200,7 +202,7 @@ async function createGoogleDocFromHtml(
     `${html}\r\n` +
     `--${boundary}--`;
 
-  const res = await fetch(`${DRIVE_UPLOAD}/files?uploadType=multipart&fields=id,name,webViewLink`, {
+  const res = await fetch(`${DRIVE_UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -218,7 +220,7 @@ async function createGoogleDocFromHtml(
 /** Export a Google Doc as PDF, returning the PDF bytes. */
 async function exportDocAsPdf(token: string, fileId: string): Promise<Uint8Array> {
   const res = await fetch(
-    `${DRIVE_API}/files/${fileId}/export?mimeType=application/pdf`,
+    `${DRIVE_API}/files/${fileId}/export?mimeType=application/pdf&supportsAllDrives=true`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }
@@ -260,7 +262,7 @@ async function uploadPdf(
   body.set(pdfBytes, metaBytes.length);
   body.set(closingBytes, metaBytes.length + pdfBytes.length);
 
-  const res = await fetch(`${DRIVE_UPLOAD}/files?uploadType=multipart&fields=id,name,webViewLink`, {
+  const res = await fetch(`${DRIVE_UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -276,7 +278,7 @@ async function uploadPdf(
 }
 
 async function deleteDriveFile(token: string, fileId: string): Promise<void> {
-  await fetch(`${DRIVE_API}/files/${fileId}`, {
+  await fetch(`${DRIVE_API}/files/${fileId}?supportsAllDrives=true`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });

@@ -1071,7 +1071,7 @@ export default function MeetingDetailPage() {
               </div>
               <textarea
                 rows={18}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-sans shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                 value={minutesContent}
                 onChange={(e) => setMinutesContent(e.target.value)}
                 placeholder="Click 'Generate from Template' to pre-fill, or write minutes manually in Markdown."
