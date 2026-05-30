@@ -110,6 +110,45 @@ function motionLanguage(
   return `A motion to ${motionDesc} was made by ${mover} and seconded by ${seconder}. ${result}`
 }
 
+// ----- Agenda item placeholder generator -----
+
+/** Builds a natural-language sentence for an agenda item that has no description.
+ *  Reads common keywords in the title to choose the right verb phrase. */
+function buildAgendaPlaceholder(presenterName: string | null, title: string): string {
+  // Determine verb phrase from title keywords
+  let verbPhrase: string
+
+  if (/financials?|financial (report|update|review)|budget|revenue|expense/i.test(title)) {
+    verbPhrase = 'presented the financials'
+  } else if (/\bupdate\b/i.test(title)) {
+    verbPhrase = `provided an update on ${title.replace(/update/i, '').replace(/\s+/g, ' ').trim() || title}`
+  } else if (/\breport\b/i.test(title)) {
+    verbPhrase = `presented the ${title}`
+  } else if (/\bstrategic plan|strategy\b/i.test(title)) {
+    verbPhrase = `presented recommendations on ${title}`
+  } else if (/\bbylaw|policy|governance\b/i.test(title)) {
+    verbPhrase = `reviewed proposed changes to ${title}`
+  } else if (/\belection|nomination|officer\b/i.test(title)) {
+    verbPhrase = `presented the slate of nominees for ${title}`
+  } else if (/\bapproval of minutes\b/i.test(title)) {
+    verbPhrase = 'presented the minutes for approval'
+  } else if (/\bcommittee\b/i.test(title)) {
+    verbPhrase = `provided a committee update on ${title}`
+  } else if (/\boperations?\b/i.test(title)) {
+    verbPhrase = `provided an update on ${title}`
+  } else {
+    verbPhrase = `presented on ${title}`
+  }
+
+  // Build the sentence
+  if (presenterName) {
+    return `${presenterName} ${verbPhrase}.`
+  } else {
+    // Capitalize first letter
+    return `${verbPhrase.charAt(0).toUpperCase()}${verbPhrase.slice(1)}.`
+  }
+}
+
 // ----- Main template generator -----
 
 export function generateMinutesMarkdown(input: TemplateInput): string {
@@ -208,18 +247,20 @@ export function generateMinutesMarkdown(input: TemplateInput): string {
     lines.push('')
 
     const presenterName = item.presenter_id
-      ? profilesById.get(item.presenter_id)?.full_name
+      ? (profilesById.get(item.presenter_id)?.full_name ?? null)
       : null
-    if (presenterName) {
-      lines.push(`*Presented by ${presenterName}.*`)
-      lines.push('')
-    }
 
     if (item.description?.trim()) {
-      lines.push(item.description.trim())
+      // Use the actual description entered on the agenda item
+      if (presenterName) {
+        lines.push(`${presenterName} presented ${item.description.trim()}`)
+      } else {
+        lines.push(item.description.trim())
+      }
       lines.push('')
     } else {
-      lines.push('[Discussion summary]')
+      // Generate a natural-language placeholder from the presenter + title
+      lines.push(buildAgendaPlaceholder(presenterName, item.title))
       lines.push('')
     }
 
