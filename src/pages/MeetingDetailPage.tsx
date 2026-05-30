@@ -257,6 +257,32 @@ export default function MeetingDetailPage() {
     }
   }
 
+  async function moveAgendaItem(itemId: string, direction: 'up' | 'down') {
+    const sorted = [...agendaItems].sort((a, b) => a.order_position - b.order_position)
+    const idx = sorted.findIndex((i) => i.id === itemId)
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= sorted.length) return
+
+    const item = sorted[idx]
+    const swap = sorted[swapIdx]
+    setSectionError(null)
+    try {
+      // Swap order_positions between the two items
+      const { error: e1 } = await supabase
+        .from('agenda_items')
+        .update({ order_position: swap.order_position })
+        .eq('id', item.id)
+      const { error: e2 } = await supabase
+        .from('agenda_items')
+        .update({ order_position: item.order_position })
+        .eq('id', swap.id)
+      if (e1 || e2) throw e1 ?? e2
+      refetchAgenda()
+    } catch (err) {
+      setSectionError((err as Error).message)
+    }
+  }
+
   // ---- Action item mutations ----
 
   async function handleAddActionItem() {
@@ -799,9 +825,30 @@ export default function MeetingDetailPage() {
           <p className="mt-4 text-sm text-gray-400">No agenda items yet.</p>
         ) : (
           <ul className="mt-4 divide-y divide-gray-100">
-            {agendaItems.map((item) => (
+            {[...agendaItems].sort((a, b) => a.order_position - b.order_position).map((item, idx, sorted) => (
               <li key={item.id} className="py-3">
                 <div className="flex items-start justify-between gap-2">
+                  {/* Reorder buttons — officers only */}
+                  {canEdit && (
+                    <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
+                      <button
+                        onClick={() => moveAgendaItem(item.id, 'up')}
+                        disabled={idx === 0}
+                        className="rounded p-0.5 text-gray-300 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-0"
+                        title="Move up"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        onClick={() => moveAgendaItem(item.id, 'down')}
+                        disabled={idx === sorted.length - 1}
+                        className="rounded p-0.5 text-gray-300 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-0"
+                        title="Move down"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-gray-900">
