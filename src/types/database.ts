@@ -68,6 +68,7 @@ export interface Committee {
   drive_folder_id: string | null
   chair_id: string | null
   is_active: boolean
+  is_restricted: boolean
   created_at: string
 }
 

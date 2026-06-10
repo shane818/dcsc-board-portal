@@ -193,14 +193,26 @@ async function checkCommitteeAccess(
   userId: string,
   committeeId: string
 ): Promise<{ allowed: boolean; driveFolderId: string | null }> {
-  // Check if user is an officer (officers can access all committees)
+  // Load the user's role and whether the committee is restricted
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", userId)
     .single();
 
-  const officerRoles = ["chair", "vice_chair", "secretary", "treasurer", "staff"];
+  const { data: committeeRow } = await supabase
+    .from("committees")
+    .select("is_restricted")
+    .eq("id", committeeId)
+    .single();
+
+  const isRestricted = committeeRow?.is_restricted === true;
+
+  // For restricted committees (e.g. Compensation), the officer/staff bypass does
+  // NOT apply — access requires explicit committee membership, full stop.
+  const officerRoles = isRestricted
+    ? [] // no role grants automatic access to a restricted committee
+    : ["chair", "vice_chair", "secretary", "treasurer", "staff"];
   const isOfficer = profile && officerRoles.includes(profile.role);
 
   if (!isOfficer) {
@@ -210,7 +222,7 @@ async function checkCommitteeAccess(
       .select("id")
       .eq("profile_id", userId)
       .eq("committee_id", committeeId)
-      .single();
+      .maybeSingle();
 
     if (!membership) {
       return { allowed: false, driveFolderId: null };

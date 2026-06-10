@@ -784,6 +784,14 @@ function CommitteesTab() {
                       <>
                         <h3 className={`text-sm font-semibold ${committee.is_active ? 'text-gray-900' : 'text-gray-400'}`}>
                           {committee.name}
+                          {committee.is_restricted && (
+                            <span
+                              className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+                              title="Restricted committee — staff cannot self-add or view documents unless an explicit member. Only board officers manage membership."
+                            >
+                              🔒 Restricted
+                            </span>
+                          )}
                         </h3>
                         {committee.description && (
                           <p className="text-xs text-gray-500 mt-0.5">{committee.description}</p>
