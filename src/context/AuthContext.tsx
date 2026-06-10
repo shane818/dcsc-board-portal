@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const isOfficer = profile ? hasAdminAccess(profile.role) : false
+  const isOfficer = profile ? hasAdminAccess(profile) : false
 
   return (
     <AuthContext.Provider value={{ session, profile, isLoading, isOfficer }}>

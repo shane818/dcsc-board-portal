@@ -42,6 +42,7 @@ export interface Profile {
   is_standard_attendee: boolean
   invite_pending: boolean
   accepted_at: string | null
+  is_admin: boolean
   created_at: string
   updated_at: string
 }
@@ -380,7 +381,8 @@ export function isOfficerRole(role: BoardRole): role is OfficerRole {
   return OFFICER_ROLES.has(role)
 }
 
-/** Officers + staff (Executive Director) get admin panel access */
-export function hasAdminAccess(role: BoardRole): boolean {
-  return OFFICER_ROLES.has(role) || role === 'staff'
+/** Admin access = a board officer role (always) OR the is_admin flag (explicit grant).
+ *  Staff are NOT automatically admin — they must have is_admin set. */
+export function hasAdminAccess(profile: Pick<Profile, 'role' | 'is_admin'>): boolean {
+  return OFFICER_ROLES.has(profile.role) || profile.is_admin === true
 }

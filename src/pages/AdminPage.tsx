@@ -11,6 +11,10 @@ import type { BoardRole, CommitteeRole } from '../types/database'
 
 type Tab = 'roster' | 'committees'
 
+// Board officer roles always have admin access (by role); the Admin checkbox is
+// only editable for non-officer roles (staff, board_member, etc.).
+const OFFICER_ROLE_SET = new Set<BoardRole>(['chair', 'vice_chair', 'secretary', 'treasurer'])
+
 const ROLE_OPTIONS: { value: BoardRole; label: string }[] = [
   { value: 'chair', label: 'Chair' },
   { value: 'vice_chair', label: 'Vice Chair' },
@@ -203,6 +207,18 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
     setSavingId(null)
   }
 
+  async function handleToggleAdmin(userId: string, currentlyAdmin: boolean) {
+    setSavingId(userId)
+    setSaveError(null)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_admin: !currentlyAdmin })
+      .eq('id', userId)
+    if (error) { console.error('[AdminPage] toggle admin failed:', error); setSaveError('Failed to update admin access. Please try again.') }
+    else refetch()
+    setSavingId(null)
+  }
+
   async function handleDeleteMember(p: { id: string; full_name: string; invite_pending: boolean }) {
     if (!session) {
       setSaveError('Your session expired. Please refresh and try again.')
@@ -390,6 +406,7 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
                 <th className="px-6 py-3">Role</th>
                 <th className="px-6 py-3">Term Start</th>
                 <th className="px-6 py-3 whitespace-nowrap">Std. Attendee</th>
+                <th className="px-6 py-3">Admin</th>
                 <th className="px-6 py-3">Status</th>
               </tr>
             </thead>
@@ -470,6 +487,25 @@ function RosterTab({ currentUserId }: { currentUserId: string }) {
                       className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy"
                       title="Auto-add to board meeting attendance"
                     />
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    {OFFICER_ROLE_SET.has(p.role) ? (
+                      <span
+                        className="text-xs text-gray-400"
+                        title="Board officers always have admin access (by role)"
+                      >
+                        ✓ (role)
+                      </span>
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={p.is_admin ?? false}
+                        disabled={savingId === p.id}
+                        onChange={() => handleToggleAdmin(p.id, p.is_admin ?? false)}
+                        className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy"
+                        title="Grant full admin access (independent of role)"
+                      />
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     {p.id === currentUserId ? (
