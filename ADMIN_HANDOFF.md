@@ -37,7 +37,7 @@ Each portal has its own **Supabase project** (separate database, separate users)
 - **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS
 - **Database & Auth:** Supabase (Postgres + Row Level Security + Realtime)
 - **Hosting:** Vercel
-- **File Storage:** Google Drive (via service account + Edge Function)
+- **File Storage:** Google Drive (via service account + Edge Function) — see **[GOOGLE_SETUP.md](GOOGLE_SETUP.md)** for the full Drive/Calendar integration guide
 - **AI Development Tool:** Claude Code (Anthropic)
 
 ---
