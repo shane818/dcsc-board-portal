@@ -95,6 +95,7 @@ export interface Meeting {
   status: MeetingStatus
   meeting_format: MeetingFormat | null
   adjourned_at: string | null
+  minute_taker_id: string | null
   created_by: string
   created_at: string
 }
@@ -277,6 +278,7 @@ export interface AnnouncementWithAuthor extends Announcement {
 export interface MeetingWithDetails extends Meeting {
   committee: { name: string } | null
   creator: { full_name: string }
+  minute_taker: { full_name: string } | null
 }
 
 /** Action item with assignee and creator names */

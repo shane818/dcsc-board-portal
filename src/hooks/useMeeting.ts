@@ -6,6 +6,7 @@ export function useMeeting(meetingId: string | undefined) {
   const [data, setData] = useState<MeetingWithDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refetchCount, setRefetchCount] = useState(0)
 
   useEffect(() => {
     if (!meetingId) {
@@ -15,7 +16,9 @@ export function useMeeting(meetingId: string | undefined) {
 
     supabase
       .from('meetings')
-      .select('*, committee:committees(name), creator:profiles!meetings_created_by_fkey(full_name)')
+      .select(
+        '*, committee:committees(name), creator:profiles!meetings_created_by_fkey(full_name), minute_taker:profiles!meetings_minute_taker_id_fkey(full_name)'
+      )
       .eq('id', meetingId)
       .single()
       .then(({ data, error }) => {
@@ -23,7 +26,9 @@ export function useMeeting(meetingId: string | undefined) {
         else setData((data as MeetingWithDetails) ?? null)
         setIsLoading(false)
       })
-  }, [meetingId])
+  }, [meetingId, refetchCount])
 
-  return { data, isLoading, error }
+  const refetch = () => setRefetchCount((c) => c + 1)
+
+  return { data, isLoading, error, refetch }
 }

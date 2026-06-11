@@ -5,6 +5,7 @@ import { useCommittees } from '../hooks/useCommittees'
 import { useAllCommittees } from '../hooks/useAllCommittees'
 import { useMeeting } from '../hooks/useMeeting'
 import { useDraftMinutes } from '../hooks/useDraftMinutes'
+import { useProfiles } from '../hooks/useProfiles'
 import { supabase } from '../lib/supabase'
 import type { MeetingFormat } from '../types/database'
 
@@ -27,6 +28,7 @@ export default function MeetingForm() {
   const { data: allCommittees } = useAllCommittees()
   const { data: existingMeeting, isLoading: meetingLoading } = useMeeting(id)
   const { data: draftMinutes } = useDraftMinutes(id)
+  const { data: profiles } = useProfiles()
 
   const [committeeId, setCommitteeId] = useState<string>('')
   const [title, setTitle] = useState('')
@@ -34,6 +36,7 @@ export default function MeetingForm() {
   const [meetingDate, setMeetingDate] = useState('')
   const [location, setLocation] = useState('')
   const [meetingFormat, setMeetingFormat] = useState<MeetingFormat | ''>('')
+  const [minuteTakerId, setMinuteTakerId] = useState<string>('')
   const [selectedDraftMinutesIds, setSelectedDraftMinutesIds] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,6 +54,7 @@ export default function MeetingForm() {
       setMeetingDate(local)
       setLocation(existingMeeting.location ?? '')
       setMeetingFormat(existingMeeting.meeting_format ?? '')
+      setMinuteTakerId(existingMeeting.minute_taker_id ?? '')
     }
   }, [existingMeeting])
 
@@ -123,6 +127,7 @@ export default function MeetingForm() {
         meeting_date: new Date(meetingDate).toISOString(),
         location: location || null,
         meeting_format: meetingFormat || null,
+        minute_taker_id: minuteTakerId || null,
       }
 
       let meetingId: string
@@ -267,6 +272,29 @@ export default function MeetingForm() {
             </select>
             <p className="mt-1 text-xs text-gray-400">
               Appears in the minutes header.
+            </p>
+          </div>
+
+          {/* Minute-taker */}
+          <div>
+            <label htmlFor="minute-taker" className="block text-sm font-medium text-gray-700">
+              Minute-taker (optional)
+            </label>
+            <select
+              id="minute-taker"
+              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+              value={minuteTakerId}
+              onChange={(e) => setMinuteTakerId(e.target.value)}
+            >
+              <option value="">— None —</option>
+              {(profiles ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Only this person (plus the Chair / an admin) can edit the minutes. Can be changed later on the meeting page.
             </p>
           </div>
 

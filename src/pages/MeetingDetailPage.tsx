@@ -107,7 +107,7 @@ export default function MeetingDetailPage() {
   const navigate = useNavigate()
   const { profile, isOfficer, session } = useAuth()
   const { data: memberships } = useCommittees(profile?.id)
-  const { data: meeting, isLoading: meetingLoading, error: meetingError } = useMeeting(id)
+  const { data: meeting, isLoading: meetingLoading, error: meetingError, refetch: refetchMeeting } = useMeeting(id)
   const { data: agendaItems, isLoading: agendaLoading, refetch: refetchAgenda } = useAgendaItems(id)
   const { data: actionItems, isLoading: actionsLoading, refetch: refetchActions } = useAllActionItems({ meetingId: id })
   const { data: minutes, isLoading: minutesLoading, refetch: refetchMinutes } = useMeetingMinutes(id)
@@ -176,6 +176,9 @@ export default function MeetingDetailPage() {
   const [minutesSaving, setMinutesSaving] = useState(false)
   const [minutesInitialized, setMinutesInitialized] = useState(false)
   const [minutesViewerUrl, setMinutesViewerUrl] = useState<string | null>(null)
+  // Minute-taker assignment control
+  const [showAssignMinuteTaker, setShowAssignMinuteTaker] = useState(false)
+  const [assigningMinuteTaker, setAssigningMinuteTaker] = useState(false)
 
   // General error state
   const [sectionError, setSectionError] = useState<string | null>(null)
@@ -204,6 +207,14 @@ export default function MeetingDetailPage() {
     )
 
   const canManageMinutes = isOfficer || isChairOfMeetingCommittee
+
+  // Who may EDIT the draft minutes: board Chair or admin (override), or the
+  // designated minute-taker for this meeting. Mirrors can_edit_minutes() in SQL.
+  const isChairOrAdmin = !!profile && (profile.role === 'chair' || profile.is_admin === true)
+  const canEditMinutes =
+    isChairOrAdmin || (!!profile && !!meeting && meeting.minute_taker_id === profile.id)
+  // Officers can (re)assign the minute-taker
+  const canAssignMinuteTaker = isOfficer
 
   // ---- Delete meeting ----
 
@@ -509,12 +520,37 @@ export default function MeetingDetailPage() {
         drafted_by: profile.id,
       })
       if (error) throw error
+      // Auto-designate the drafter as minute-taker if none is set yet, so they
+      // retain edit access under the new minute-taker lock.
+      if (meeting && !meeting.minute_taker_id) {
+        await supabase.from('meetings').update({ minute_taker_id: profile.id }).eq('id', id)
+        refetchMeeting()
+      }
       setMinutesInitialized(false)
       refetchMinutes()
     } catch (err) {
       setSectionError((err as Error).message)
     } finally {
       setMinutesSaving(false)
+    }
+  }
+
+  async function handleAssignMinuteTaker(profileId: string) {
+    if (!id) return
+    setAssigningMinuteTaker(true)
+    setSectionError(null)
+    try {
+      const { error } = await supabase
+        .from('meetings')
+        .update({ minute_taker_id: profileId || null })
+        .eq('id', id)
+      if (error) throw error
+      setShowAssignMinuteTaker(false)
+      refetchMeeting()
+    } catch (err) {
+      setSectionError((err as Error).message)
+    } finally {
+      setAssigningMinuteTaker(false)
     }
   }
 
@@ -1323,7 +1359,51 @@ export default function MeetingDetailPage() {
 
       {/* Meeting Minutes */}
       <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h2 className="text-lg font-semibold text-gray-900">Meeting Minutes</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-gray-900">Meeting Minutes</h2>
+          {/* Minute-taker banner + assign/handoff control */}
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">
+              Minute-taker:{' '}
+              <span className="font-medium text-gray-800">
+                {meeting?.minute_taker?.full_name ?? 'Not assigned'}
+              </span>
+            </span>
+            {canAssignMinuteTaker && !showAssignMinuteTaker && (
+              <button
+                onClick={() => setShowAssignMinuteTaker(true)}
+                className="text-xs font-medium text-navy hover:text-navy-dark"
+              >
+                {meeting?.minute_taker_id ? 'Change' : 'Assign'}
+              </button>
+            )}
+            {canAssignMinuteTaker && showAssignMinuteTaker && (
+              <span className="flex items-center gap-1">
+                <select
+                  defaultValue={meeting?.minute_taker_id ?? ''}
+                  disabled={assigningMinuteTaker}
+                  onChange={(e) => handleAssignMinuteTaker(e.target.value)}
+                  className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                >
+                  <option value="">— None —</option>
+                  {allProfiles
+                    .filter((p) => p.is_active)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  onClick={() => setShowAssignMinuteTaker(false)}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Cancel
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
 
         {minutesLoading ? (
           <div className="mt-4 flex justify-center">
@@ -1350,11 +1430,21 @@ export default function MeetingDetailPage() {
             <p className="text-sm text-gray-500">
               Drafted by {minutes.drafter.full_name}
             </p>
+
+            {/* Read-only notice for non-editors */}
+            {!canEditMinutes && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {meeting?.minute_taker?.full_name ?? 'A designated minute-taker'} is the
+                minute-taker for this meeting. Only they (or the Chair / an admin) can edit
+                these minutes. You can view and download the current draft below.
+              </div>
+            )}
+
             <div>
               <div className="flex items-center justify-between">
                 <label className="block text-sm font-medium text-gray-700">Content (Markdown)</label>
                 <div className="flex items-center gap-3">
-                  {canManageMinutes && (
+                  {canEditMinutes && (
                     <button
                       type="button"
                       onClick={handleGenerateTemplate}
@@ -1377,37 +1467,44 @@ export default function MeetingDetailPage() {
               </div>
               <textarea
                 rows={18}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-sans shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                readOnly={!canEditMinutes}
+                className={`mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-sans shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy ${
+                  !canEditMinutes ? 'bg-gray-50 text-gray-600 cursor-not-allowed' : ''
+                }`}
                 value={minutesContent}
-                onChange={(e) => setMinutesContent(e.target.value)}
+                onChange={(e) => canEditMinutes && setMinutesContent(e.target.value)}
                 placeholder="Click 'Generate from Template' to pre-fill, or write minutes manually in Markdown."
               />
             </div>
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-              <label className="block text-sm font-semibold text-gray-900">
-                Link to shared minutes document
-              </label>
-              <p className="mt-0.5 text-xs text-gray-600">
-                Paste the Google Drive (or Docs) link where the polished minutes live.
-                When the minutes are approved, this link will be saved to Board Resources
-                under Approved Minutes. Leave blank to try auto-archiving the markdown content above.
-              </p>
-              <input
-                type="text"
-                placeholder="https://docs.google.com/document/d/..."
-                className="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-                value={minutesDriveUrl}
-                onChange={(e) => setMinutesDriveUrl(e.target.value)}
-              />
-            </div>
+            {canEditMinutes && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <label className="block text-sm font-semibold text-gray-900">
+                  Link to shared minutes document
+                </label>
+                <p className="mt-0.5 text-xs text-gray-600">
+                  Paste the Google Drive (or Docs) link where the polished minutes live.
+                  When the minutes are approved, this link will be saved to Board Resources
+                  under Approved Minutes. Leave blank to try auto-archiving the markdown content above.
+                </p>
+                <input
+                  type="text"
+                  placeholder="https://docs.google.com/document/d/..."
+                  className="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                  value={minutesDriveUrl}
+                  onChange={(e) => setMinutesDriveUrl(e.target.value)}
+                />
+              </div>
+            )}
             <div className="flex gap-3">
-              <button
-                onClick={handleSaveMinutesDraft}
-                disabled={minutesSaving}
-                className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark disabled:opacity-50"
-              >
-                {minutesSaving ? 'Saving...' : 'Save Draft'}
-              </button>
+              {canEditMinutes && (
+                <button
+                  onClick={handleSaveMinutesDraft}
+                  disabled={minutesSaving}
+                  className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark disabled:opacity-50"
+                >
+                  {minutesSaving ? 'Saving...' : 'Save Draft'}
+                </button>
+              )}
               {isOfficer && (
                 <button
                   onClick={handleApproveMinutes}

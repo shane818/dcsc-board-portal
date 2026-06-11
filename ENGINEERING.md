@@ -1094,11 +1094,22 @@ are not yet.
   tables are in the `supabase_realtime` publication
   (migration `20260420000000_concurrency_guard.sql`).
 
-### Still last-write-wins (by design or pending)
-- **Minutes (`meeting_minutes`) — NOT yet protected. Highest risk.** If two
-  officers edit the same draft minutes, the second **Save Draft** silently
-  overwrites the first. `meeting_minutes` has an `updated_at` but it's not yet
-  checked, and there's no presence indicator. **This is the top remaining gap.**
+### Minutes — access-controlled to a designated minute-taker
+- Each meeting has a **`meetings.minute_taker_id`** (designated minute-taker).
+  Only that person — plus the board **Chair** and **admins** (`is_admin`) — can
+  edit the draft minutes. Enforced at the DB by the `can_edit_minutes(meeting_id)`
+  helper in the `meeting_minutes` UPDATE policy
+  (migration `20260421000000_minute_taker.sql`), and mirrored in the UI
+  (`canEditMinutes` in `MeetingDetailPage.tsx`) which makes the editor read-only
+  for everyone else. This closed a prior hole where any meeting-viewer could type
+  in the draft textarea.
+- Assigning / handing off: set an initial minute-taker on the `MeetingForm`, or
+  use the "Minute-taker · Change" control in the minutes section header (officers).
+  Drafting minutes auto-designates the drafter if none is set.
+- **Residual:** two *authorized* editors (e.g. the secretary and the chair) editing
+  the same draft simultaneously is still last-write-wins — but this is now
+  structurally unlikely. Presence/optimistic-concurrency on minutes remains
+  optional future work.
 - **Single-field, fire-immediately controls** intentionally remain last-write-
   wins (low blast radius, guarding them would add friction): agenda **status**
   dropdown (`updateAgendaStatus`), agenda **reorder** (`moveAgendaItem`), action
