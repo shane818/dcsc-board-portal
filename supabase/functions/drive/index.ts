@@ -1,28 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ---- CORS ----
+// Wildcard origin: auth is enforced via the Supabase JWT, so the origin does not
+// gate access. Using a static "*" ensures ALL responses (success and error) carry
+// matching CORS headers regardless of which portal (DCSC or DC SCORES) calls.
+// (A previous per-origin scheme only set the right origin on the OPTIONS preflight
+//  but defaulted error/success responses to the DCSC origin, breaking DC SCORES.)
 
-const ALLOWED_ORIGINS = [
-  "https://dcsc-board-portal.vercel.app",
-  "https://dc-scores-board-portal.vercel.app",
-];
-
-function getCorsHeaders(requestOrigin: string | null): Record<string, string> {
-  const origin =
-    requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin)
-      ? requestOrigin
-      : ALLOWED_ORIGINS[0];
+function getCorsHeaders(_requestOrigin?: string | null): Record<string, string> {
   return {
-    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Vary": "Origin",
   };
 }
 
-// Kept for backward compatibility in jsonResponse / errorResponse helpers
-const corsHeaders: Record<string, string> = getCorsHeaders(null);
+const corsHeaders: Record<string, string> = getCorsHeaders();
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
