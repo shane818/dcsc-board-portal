@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import DriveViewer from '../components/DriveViewer'
@@ -119,9 +119,34 @@ export default function MeetingDetailPage() {
   const BOARD_ROLES = new Set(['chair', 'vice_chair', 'secretary', 'treasurer', 'board_member'])
   const boardProfiles = allProfiles.filter((p) => BOARD_ROLES.has(p.role) && p.is_active)
 
+  // Live refresh: when anyone changes agenda/action items for this meeting,
+  // refetch so all viewers stay current (shrinks the concurrent-edit window).
+  useEffect(() => {
+    if (!id) return
+    const channel = supabase
+      .channel(`meeting:${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agenda_items', filter: `meeting_id=eq.${id}` },
+        () => refetchAgenda()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'action_items', filter: `meeting_id=eq.${id}` },
+        () => refetchActions()
+      )
+      .subscribe()
+    return () => {
+      channel.unsubscribe()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
   // Agenda form state
   const [showAgendaForm, setShowAgendaForm] = useState(false)
   const [editingAgendaId, setEditingAgendaId] = useState<string | null>(null)
+  // Timestamp of the item when the edit form was opened (optimistic concurrency)
+  const [editingAgendaUpdatedAt, setEditingAgendaUpdatedAt] = useState<string | null>(null)
   const [agendaTitle, setAgendaTitle] = useState('')
   const [agendaDescription, setAgendaDescription] = useState('')
   // Multiple presenters: each is either a member (profile_id) or a guest (guest_name)
@@ -137,6 +162,7 @@ export default function MeetingDetailPage() {
   // Action item form state
   const [showActionForm, setShowActionForm] = useState(false)
   const [editingActionId, setEditingActionId] = useState<string | null>(null)
+  const [editingActionUpdatedAt, setEditingActionUpdatedAt] = useState<string | null>(null)
   const [actionTitle, setActionTitle] = useState('')
   const [actionDescription, setActionDescription] = useState('')
   const [actionAssigneeId, setActionAssigneeId] = useState('')
@@ -220,6 +246,7 @@ export default function MeetingDetailPage() {
 
   function resetAgendaForm() {
     setEditingAgendaId(null)
+    setEditingAgendaUpdatedAt(null)
     setAgendaTitle('')
     setAgendaDescription('')
     setAgendaPresenters([])
@@ -232,6 +259,7 @@ export default function MeetingDetailPage() {
 
   function startEditAgendaItem(item: typeof agendaItems[number]) {
     setEditingAgendaId(item.id)
+    setEditingAgendaUpdatedAt(item.updated_at)
     setAgendaTitle(item.title)
     setAgendaDescription(item.description ?? '')
     setAgendaPresenters(
@@ -298,14 +326,21 @@ export default function MeetingDetailPage() {
 
       let agendaItemId: string
       if (editingAgendaId) {
-        const { data, error } = await supabase
-          .from('agenda_items')
-          .update(payload)
-          .eq('id', editingAgendaId)
-          .select('id')
-          .single()
+        // Optimistic concurrency: only update if the row hasn't changed since we loaded it
+        let query = supabase.from('agenda_items').update(payload).eq('id', editingAgendaId)
+        if (editingAgendaUpdatedAt) query = query.eq('updated_at', editingAgendaUpdatedAt)
+        const { data, error } = await query.select('id')
         if (error) throw error
-        agendaItemId = data.id
+        if (!data || data.length === 0) {
+          // Someone else changed this item first — refresh and warn, don't overwrite
+          resetAgendaForm()
+          refetchAgenda()
+          setSectionError(
+            'This agenda item was just changed by someone else — your edit was not saved. The latest version is now shown; please re-apply your change.'
+          )
+          return
+        }
+        agendaItemId = data[0].id
       } else {
         const { data, error } = await supabase
           .from('agenda_items')
@@ -375,6 +410,7 @@ export default function MeetingDetailPage() {
     setActionAssigneeId('')
     setActionDueDate('')
     setActionPriority('medium')
+    setEditingActionUpdatedAt(null)
     setShowActionForm(false)
   }
 
@@ -385,8 +421,10 @@ export default function MeetingDetailPage() {
     assignee_id: string
     due_date: string | null
     priority: ActionItemPriority
+    updated_at: string
   }) {
     setEditingActionId(item.id)
+    setEditingActionUpdatedAt(item.updated_at)
     setActionTitle(item.title)
     setActionDescription(item.description ?? '')
     setActionAssigneeId(item.assignee_id)
@@ -401,7 +439,8 @@ export default function MeetingDetailPage() {
     setSectionError(null)
     try {
       if (editingActionId) {
-        const { error } = await supabase
+        // Optimistic concurrency: only update if the row hasn't changed since we loaded it
+        let query = supabase
           .from('action_items')
           .update({
             title: actionTitle,
@@ -411,7 +450,17 @@ export default function MeetingDetailPage() {
             priority: actionPriority,
           })
           .eq('id', editingActionId)
+        if (editingActionUpdatedAt) query = query.eq('updated_at', editingActionUpdatedAt)
+        const { data, error } = await query.select('id')
         if (error) throw error
+        if (!data || data.length === 0) {
+          resetActionForm()
+          refetchActions()
+          setSectionError(
+            'This action item was just changed by someone else — your edit was not saved. The latest version is now shown; please re-apply your change.'
+          )
+          return
+        }
       } else {
         const { error } = await supabase.from('action_items').insert({
           meeting_id: id,
@@ -1258,6 +1307,7 @@ export default function MeetingDetailPage() {
                         assignee_id: item.assignee_id,
                         due_date: item.due_date,
                         priority: item.priority,
+                        updated_at: item.updated_at,
                       })
                     }
                     className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"

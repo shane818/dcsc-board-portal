@@ -128,6 +128,7 @@ export interface AgendaItem {
   requires_approval: boolean
   requires_committee_approval: boolean
   created_at: string
+  updated_at: string
 }
 
 export interface AgendaItemPresenter {
@@ -200,6 +201,7 @@ export interface ActionItem {
   priority: ActionItemPriority
   created_by: string
   created_at: string
+  updated_at: string
   completed_at: string | null
 }
 

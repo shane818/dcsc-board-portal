@@ -1073,48 +1073,48 @@ LIMIT 50;
 
 ---
 
-## Concurrent Editing — Known Limitation & Risk
+## Concurrent Editing — Status
 
-**Status:** documented, not yet mitigated (as of June 2026).
+**Updated June 2026.** Agenda items and action items are now protected; minutes
+are not yet.
 
-### Current behavior
-- **No realtime on meeting data.** All meeting-related hooks (`useMeeting`,
-  `useAgendaItems`, `useActionItems`, `useMeetingMinutes`, `useAgendaItemMotion`)
-  are **one-time fetch + manual `refetch()`**. Only the messaging system
-  (`useMessages`, `useReactions`) uses Supabase Realtime. So if two people view
-  the same meeting, neither sees the other's changes until they refetch or reload.
-- **Last-write-wins on every write.** All updates are keyed only by `id`
-  (`.update(...).eq('id', …)`). There is no version column check, no optimistic
-  concurrency control, no locking, and no "someone else is editing" indicator.
-- `meeting_minutes` has an `updated_at` column (auto-maintained by a trigger) but
-  it is **never read or compared** by the client.
+### Protected: agenda items + action items (meeting page)
+- **Optimistic concurrency on form edits.** `agenda_items` and `action_items`
+  each have an `updated_at` column (auto-maintained by the `set_updated_at`
+  trigger). When an officer opens the edit form, the row's `updated_at` is
+  captured; the save runs `.update(...).eq('id', …).eq('updated_at', captured)`.
+  If another user changed the row first, 0 rows match → the save is **blocked**,
+  the user sees *"This item was just changed by someone else — your edit was not
+  saved…"*, and the list auto-refreshes to the latest version. No silent loss.
+  (See `handleSaveAgendaItem` / `handleSaveActionItem` in `MeetingDetailPage.tsx`.)
+- **Realtime auto-refresh.** `MeetingDetailPage.tsx` opens a Supabase Realtime
+  channel `meeting:${id}` subscribed to `postgres_changes` on `agenda_items` and
+  `action_items` (filtered by `meeting_id`). Any insert/update/delete by another
+  user triggers a refetch, so all viewers stay current within seconds. Both
+  tables are in the `supabase_realtime` publication
+  (migration `20260420000000_concurrency_guard.sql`).
 
-### The main risk: simultaneous minutes editing
-During a live board meeting, if two officers both open the same draft minutes:
-1. Both load the same content into local state.
-2. Both type changes (no DB writes yet).
-3. Whoever clicks **Save Draft** second **silently overwrites** the first
-   person's work. No warning, no merge, no conflict prompt.
+### Still last-write-wins (by design or pending)
+- **Minutes (`meeting_minutes`) — NOT yet protected. Highest risk.** If two
+  officers edit the same draft minutes, the second **Save Draft** silently
+  overwrites the first. `meeting_minutes` has an `updated_at` but it's not yet
+  checked, and there's no presence indicator. **This is the top remaining gap.**
+- **Single-field, fire-immediately controls** intentionally remain last-write-
+  wins (low blast radius, guarding them would add friction): agenda **status**
+  dropdown (`updateAgendaStatus`), agenda **reorder** (`moveAgendaItem`), action
+  **complete** toggle (`toggleActionComplete`), and vote recording in `VotePanel`.
 
-Smaller-blast-radius versions of the same race exist for agenda status changes,
-action item edits, and vote recording — but minutes content loss is the worst case.
-
-### Interim operational guidance
-- Designate **one minute-taker** per meeting. Others should avoid editing the
-  minutes simultaneously.
-- After someone else has made changes, **reload the page** before editing to
-  avoid working from stale data.
+### Interim operational guidance (minutes)
+- Designate **one minute-taker** per meeting; others avoid editing minutes
+  simultaneously. Reload before editing if someone else has been working.
 
 ### Recommended future fixes (priority order)
-1. **Presence indicator** on the minutes editor via a Supabase Realtime channel —
-   "Officer X is also editing these minutes."
-2. **Optimistic concurrency on minutes** using the existing `updated_at`: send the
-   last-known timestamp with the update, reject if it changed server-side, and
-   prompt the user to refresh/merge.
-3. **Realtime auto-refetch** on agenda items, action items, and minutes so changes
-   from other users appear within seconds.
-4. **Collaborative editing** (Yjs/CRDT) — only if true simultaneous editing becomes
-   a real need; significant added complexity.
+1. **Minutes presence indicator** via a Realtime channel — "Officer X is also
+   editing these minutes."
+2. **Optimistic concurrency on minutes** using the existing `updated_at` (same
+   pattern now used for agenda/action items).
+3. **Collaborative editing** (Yjs/CRDT) — only if true simultaneous editing of
+   minutes becomes a real need; significant added complexity.
 
 ---
 
