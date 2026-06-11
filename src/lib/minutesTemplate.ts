@@ -19,10 +19,23 @@ interface TemplateInput {
   meeting: Meeting
   attendees: MeetingAttendeeWithProfile[]
   agendaItems: AgendaItem[]
+  /** Board-scope motions keyed by agenda_item_id. */
   motionsByAgendaItem: Record<string, AgendaItemMotion>
+  /** Committee-scope motions keyed by agenda_item_id. */
+  committeeMotionsByAgendaItem: Record<string, AgendaItemMotion>
+  /** Presenter display names keyed by agenda_item_id (members + guests, ordered). */
+  presentersByItem: Record<string, string[]>
   profilesById: Map<string, Profile>
   pendingMinutes: DraftMinutesToReview[]
   chairProfile: Profile | undefined
+}
+
+/** Joins a list of names into "A", "A and B", or "A, B and C". */
+function joinNames(names: string[]): string {
+  if (names.length === 0) return ''
+  if (names.length === 1) return names[0]
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
 // ----- Pure formatting helpers -----
@@ -113,7 +126,8 @@ function motionLanguage(
 // ----- Agenda item placeholder generator -----
 
 /** Builds a natural-language sentence for an agenda item that has no description.
- *  Reads common keywords in the title to choose the right verb phrase. */
+ *  Reads common keywords in the title to choose the right verb phrase.
+ *  `presenterName` is a pre-joined string of one or more presenters, or null. */
 function buildAgendaPlaceholder(presenterName: string | null, title: string): string {
   // Determine verb phrase from title keywords
   let verbPhrase: string
@@ -152,7 +166,17 @@ function buildAgendaPlaceholder(presenterName: string | null, title: string): st
 // ----- Main template generator -----
 
 export function generateMinutesMarkdown(input: TemplateInput): string {
-  const { meeting, attendees, agendaItems, motionsByAgendaItem, profilesById, pendingMinutes, chairProfile } = input
+  const {
+    meeting,
+    attendees,
+    agendaItems,
+    motionsByAgendaItem,
+    committeeMotionsByAgendaItem,
+    presentersByItem,
+    profilesById,
+    pendingMinutes,
+    chairProfile,
+  } = input
 
   // Split attendees by category and mode
   const boardAttendees = attendees.filter((a) => a.attendee_category === 'board_member')
@@ -246,9 +270,13 @@ export function generateMinutesMarkdown(input: TemplateInput): string {
     lines.push(`## ${item.title}`)
     lines.push('')
 
-    const presenterName = item.presenter_id
-      ? (profilesById.get(item.presenter_id)?.full_name ?? null)
-      : null
+    // Multiple presenters (members + guests). Fall back to legacy single presenter_id.
+    let presenterNames = presentersByItem[item.id] ?? []
+    if (presenterNames.length === 0 && item.presenter_id) {
+      const legacy = profilesById.get(item.presenter_id)?.full_name
+      if (legacy) presenterNames = [legacy]
+    }
+    const presenterName = presenterNames.length > 0 ? joinNames(presenterNames) : null
 
     if (item.description?.trim()) {
       // Use the actual description entered on the agenda item
@@ -259,7 +287,7 @@ export function generateMinutesMarkdown(input: TemplateInput): string {
       }
       lines.push('')
     } else {
-      // Generate a natural-language placeholder from the presenter + title
+      // Generate a natural-language placeholder from the presenter(s) + title
       lines.push(buildAgendaPlaceholder(presenterName, item.title))
       lines.push('')
     }
@@ -267,6 +295,12 @@ export function generateMinutesMarkdown(input: TemplateInput): string {
     const motion = motionsByAgendaItem[item.id]
     if (motion) {
       lines.push(motionLanguage(motion, profilesById))
+      lines.push('')
+    }
+
+    const committeeMotion = committeeMotionsByAgendaItem[item.id]
+    if (committeeMotion) {
+      lines.push(`Committee approval: ${motionLanguage(committeeMotion, profilesById)}`)
       lines.push('')
     }
   }
@@ -287,7 +321,7 @@ export function generateMinutesMarkdown(input: TemplateInput): string {
 
 export async function buildMinutesTemplate(meetingId: string): Promise<string> {
   // Parallel fetches
-  const [meetingRes, attendeesRes, agendaRes, motionsRes, pendingRes, profilesRes] = await Promise.all([
+  const [meetingRes, attendeesRes, agendaRes, motionsRes, presentersRes, pendingRes, profilesRes] = await Promise.all([
     supabase.from('meetings').select('*').eq('id', meetingId).single(),
     supabase
       .from('meeting_attendees')
@@ -297,6 +331,10 @@ export async function buildMinutesTemplate(meetingId: string): Promise<string> {
     supabase
       .from('agenda_item_motions')
       .select('*, agenda_item:agenda_items!agenda_item_id(meeting_id)')
+      .eq('agenda_item.meeting_id', meetingId),
+    supabase
+      .from('agenda_item_presenters')
+      .select('agenda_item_id, profile_id, guest_name, order_position, agenda_item:agenda_items!agenda_item_id(meeting_id), profile:profiles!profile_id(full_name)')
       .eq('agenda_item.meeting_id', meetingId),
     supabase
       .from('meeting_minutes_for_review')
@@ -318,10 +356,24 @@ export async function buildMinutesTemplate(meetingId: string): Promise<string> {
 
   const profilesById = new Map(allProfiles.map((p) => [p.id, p]))
 
-  // Build motions lookup keyed by agenda_item_id
+  // Split motions by scope, keyed by agenda_item_id
   const motionsByAgendaItem: Record<string, AgendaItemMotion> = {}
+  const committeeMotionsByAgendaItem: Record<string, AgendaItemMotion> = {}
   for (const m of (motionsRes.data ?? []) as AgendaItemMotion[]) {
-    motionsByAgendaItem[m.agenda_item_id] = m
+    if (m.vote_scope === 'committee') committeeMotionsByAgendaItem[m.agenda_item_id] = m
+    else motionsByAgendaItem[m.agenda_item_id] = m
+  }
+
+  // Build presenter display-name lists keyed by agenda_item_id (ordered)
+  const presentersByItem: Record<string, string[]> = {}
+  const rawPresenters = ((presentersRes.data ?? []) as any[])
+    .slice()
+    .sort((a, b) => (a.order_position ?? 0) - (b.order_position ?? 0))
+  for (const p of rawPresenters) {
+    const name = p.guest_name ?? p.profile?.full_name
+    if (!name) continue
+    if (!presentersByItem[p.agenda_item_id]) presentersByItem[p.agenda_item_id] = []
+    presentersByItem[p.agenda_item_id].push(name)
   }
 
   // Flatten pending minutes
@@ -342,6 +394,8 @@ export async function buildMinutesTemplate(meetingId: string): Promise<string> {
     attendees,
     agendaItems,
     motionsByAgendaItem,
+    committeeMotionsByAgendaItem,
+    presentersByItem,
     profilesById,
     pendingMinutes,
     chairProfile,

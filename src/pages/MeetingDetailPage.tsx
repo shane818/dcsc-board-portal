@@ -121,16 +121,22 @@ export default function MeetingDetailPage() {
 
   // Agenda form state
   const [showAgendaForm, setShowAgendaForm] = useState(false)
+  const [editingAgendaId, setEditingAgendaId] = useState<string | null>(null)
   const [agendaTitle, setAgendaTitle] = useState('')
   const [agendaDescription, setAgendaDescription] = useState('')
-  const [agendaPresenterId, setAgendaPresenterId] = useState('')
+  // Multiple presenters: each is either a member (profile_id) or a guest (guest_name)
+  const [agendaPresenters, setAgendaPresenters] = useState<
+    { profile_id?: string; guest_name?: string }[]
+  >([])
   const [agendaDuration, setAgendaDuration] = useState('')
   const [agendaRequiresApproval, setAgendaRequiresApproval] = useState(false)
+  const [agendaRequiresCommitteeApproval, setAgendaRequiresCommitteeApproval] = useState(false)
   const [agendaDriveFileUrl, setAgendaDriveFileUrl] = useState('')
   const [agendaSaving, setAgendaSaving] = useState(false)
 
   // Action item form state
   const [showActionForm, setShowActionForm] = useState(false)
+  const [editingActionId, setEditingActionId] = useState<string | null>(null)
   const [actionTitle, setActionTitle] = useState('')
   const [actionDescription, setActionDescription] = useState('')
   const [actionAssigneeId, setActionAssigneeId] = useState('')
@@ -212,29 +218,106 @@ export default function MeetingDetailPage() {
 
   // ---- Agenda mutations ----
 
-  async function handleAddAgendaItem() {
+  function resetAgendaForm() {
+    setEditingAgendaId(null)
+    setAgendaTitle('')
+    setAgendaDescription('')
+    setAgendaPresenters([])
+    setAgendaDuration('')
+    setAgendaRequiresApproval(false)
+    setAgendaRequiresCommitteeApproval(false)
+    setAgendaDriveFileUrl('')
+    setShowAgendaForm(false)
+  }
+
+  function startEditAgendaItem(item: typeof agendaItems[number]) {
+    setEditingAgendaId(item.id)
+    setAgendaTitle(item.title)
+    setAgendaDescription(item.description ?? '')
+    setAgendaPresenters(
+      (item.presenters ?? []).map((p) =>
+        p.profile_id ? { profile_id: p.profile_id } : { guest_name: p.guest_name ?? '' }
+      )
+    )
+    setAgendaDuration(item.duration_minutes?.toString() ?? '')
+    setAgendaRequiresApproval(item.requires_approval)
+    setAgendaRequiresCommitteeApproval(item.requires_committee_approval)
+    setAgendaDriveFileUrl(item.drive_file_url ?? '')
+    setShowAgendaForm(true)
+  }
+
+  // ---- Presenter editor helpers ----
+  function addPresenterMember() {
+    setAgendaPresenters((prev) => [...prev, { profile_id: '' }])
+  }
+  function addPresenterGuest() {
+    setAgendaPresenters((prev) => [...prev, { guest_name: '' }])
+  }
+  function updatePresenter(idx: number, value: { profile_id?: string; guest_name?: string }) {
+    setAgendaPresenters((prev) => prev.map((p, i) => (i === idx ? value : p)))
+  }
+  function removePresenter(idx: number) {
+    setAgendaPresenters((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  /** Replace all presenter rows for an agenda item (delete-then-insert). */
+  async function savePresenters(agendaItemId: string) {
+    await supabase.from('agenda_item_presenters').delete().eq('agenda_item_id', agendaItemId)
+    const rows = agendaPresenters
+      .map((p, i) => {
+        const profileId = p.profile_id?.trim()
+        const guestName = p.guest_name?.trim()
+        if (profileId) return { agenda_item_id: agendaItemId, profile_id: profileId, order_position: i }
+        if (guestName) return { agenda_item_id: agendaItemId, guest_name: guestName, order_position: i }
+        return null
+      })
+      .filter(Boolean) as { agenda_item_id: string; profile_id?: string; guest_name?: string; order_position: number }[]
+    if (rows.length > 0) {
+      await supabase.from('agenda_item_presenters').insert(rows)
+    }
+  }
+
+  async function handleSaveAgendaItem() {
     if (!id) return
     setAgendaSaving(true)
     setSectionError(null)
     try {
-      const { error } = await supabase.from('agenda_items').insert({
-        meeting_id: id,
+      // Keep legacy presenter_id in sync with the first member presenter (back-compat)
+      const firstMemberId =
+        agendaPresenters.find((p) => p.profile_id?.trim())?.profile_id?.trim() ?? null
+
+      const payload = {
         title: agendaTitle,
         description: agendaDescription || null,
-        presenter_id: agendaPresenterId || null,
-        order_position: agendaItems.length + 1,
+        presenter_id: firstMemberId,
         duration_minutes: agendaDuration ? parseInt(agendaDuration, 10) : null,
         requires_approval: agendaRequiresApproval,
+        requires_committee_approval: agendaRequiresCommitteeApproval,
         drive_file_url: agendaDriveFileUrl.trim() || null,
-      })
-      if (error) throw error
-      setAgendaTitle('')
-      setAgendaDescription('')
-      setAgendaPresenterId('')
-      setAgendaDuration('')
-      setAgendaRequiresApproval(false)
-      setAgendaDriveFileUrl('')
-      setShowAgendaForm(false)
+      }
+
+      let agendaItemId: string
+      if (editingAgendaId) {
+        const { data, error } = await supabase
+          .from('agenda_items')
+          .update(payload)
+          .eq('id', editingAgendaId)
+          .select('id')
+          .single()
+        if (error) throw error
+        agendaItemId = data.id
+      } else {
+        const { data, error } = await supabase
+          .from('agenda_items')
+          .insert({ ...payload, meeting_id: id, order_position: agendaItems.length + 1 })
+          .select('id')
+          .single()
+        if (error) throw error
+        agendaItemId = data.id
+      }
+
+      await savePresenters(agendaItemId)
+      resetAgendaForm()
       refetchAgenda()
     } catch (err) {
       setSectionError((err as Error).message)
@@ -285,27 +368,63 @@ export default function MeetingDetailPage() {
 
   // ---- Action item mutations ----
 
-  async function handleAddActionItem() {
+  function resetActionForm() {
+    setEditingActionId(null)
+    setActionTitle('')
+    setActionDescription('')
+    setActionAssigneeId('')
+    setActionDueDate('')
+    setActionPriority('medium')
+    setShowActionForm(false)
+  }
+
+  function startEditActionItem(item: {
+    id: string
+    title: string
+    description: string | null
+    assignee_id: string
+    due_date: string | null
+    priority: ActionItemPriority
+  }) {
+    setEditingActionId(item.id)
+    setActionTitle(item.title)
+    setActionDescription(item.description ?? '')
+    setActionAssigneeId(item.assignee_id)
+    setActionDueDate(item.due_date ?? '')
+    setActionPriority(item.priority)
+    setShowActionForm(true)
+  }
+
+  async function handleSaveActionItem() {
     if (!id || !profile) return
     setActionSaving(true)
     setSectionError(null)
     try {
-      const { error } = await supabase.from('action_items').insert({
-        meeting_id: id,
-        title: actionTitle,
-        description: actionDescription || null,
-        assignee_id: actionAssigneeId,
-        due_date: actionDueDate || null,
-        priority: actionPriority,
-        created_by: profile.id,
-      })
-      if (error) throw error
-      setActionTitle('')
-      setActionDescription('')
-      setActionAssigneeId('')
-      setActionDueDate('')
-      setActionPriority('medium')
-      setShowActionForm(false)
+      if (editingActionId) {
+        const { error } = await supabase
+          .from('action_items')
+          .update({
+            title: actionTitle,
+            description: actionDescription || null,
+            assignee_id: actionAssigneeId,
+            due_date: actionDueDate || null,
+            priority: actionPriority,
+          })
+          .eq('id', editingActionId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('action_items').insert({
+          meeting_id: id,
+          title: actionTitle,
+          description: actionDescription || null,
+          assignee_id: actionAssigneeId,
+          due_date: actionDueDate || null,
+          priority: actionPriority,
+          created_by: profile.id,
+        })
+        if (error) throw error
+      }
+      resetActionForm()
       refetchActions()
     } catch (err) {
       setSectionError((err as Error).message)
@@ -721,9 +840,9 @@ export default function MeetingDetailPage() {
       <div className="rounded-xl border border-gray-200 bg-white p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Agenda</h2>
-          {!showAgendaForm && (
+          {!showAgendaForm && canEdit && (
             <button
-              onClick={() => setShowAgendaForm(true)}
+              onClick={() => { resetAgendaForm(); setShowAgendaForm(true) }}
               className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark"
             >
               Add Item
@@ -752,32 +871,69 @@ export default function MeetingDetailPage() {
                 onChange={(e) => setAgendaDescription(e.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700">Presenter</label>
-                <select
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-                  value={agendaPresenterId}
-                  onChange={(e) => setAgendaPresenterId(e.target.value)}
-                >
-                  <option value="">None</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name}
-                    </option>
-                  ))}
-                </select>
+            {/* Presenters (multiple — members + guests) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Presenters</label>
+              <div className="mt-1 space-y-2">
+                {agendaPresenters.map((p, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    {p.guest_name !== undefined ? (
+                      <input
+                        type="text"
+                        placeholder="Guest name"
+                        value={p.guest_name}
+                        onChange={(e) => updatePresenter(idx, { guest_name: e.target.value })}
+                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                      />
+                    ) : (
+                      <select
+                        value={p.profile_id ?? ''}
+                        onChange={(e) => updatePresenter(idx, { profile_id: e.target.value })}
+                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                      >
+                        <option value="">Select member…</option>
+                        {profiles.map((pr) => (
+                          <option key={pr.id} value={pr.id}>{pr.full_name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removePresenter(idx)}
+                      className="text-gray-400 hover:text-red-500 text-sm"
+                      title="Remove presenter"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={addPresenterMember}
+                    className="text-xs font-medium text-navy hover:text-navy-dark"
+                  >
+                    + Add member
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addPresenterGuest}
+                    className="text-xs font-medium text-navy hover:text-navy-dark"
+                  >
+                    + Add guest
+                  </button>
+                </div>
               </div>
-              <div className="sm:w-32">
-                <label className="block text-sm font-medium text-gray-700">Duration (min)</label>
-                <input
-                  type="number"
-                  min={1}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-                  value={agendaDuration}
-                  onChange={(e) => setAgendaDuration(e.target.value)}
-                />
-              </div>
+            </div>
+            <div className="sm:w-40">
+              <label className="block text-sm font-medium text-gray-700">Duration (min)</label>
+              <input
+                type="number"
+                min={1}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                value={agendaDuration}
+                onChange={(e) => setAgendaDuration(e.target.value)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Link a Drive file (optional)</label>
@@ -796,18 +952,27 @@ export default function MeetingDetailPage() {
                 onChange={(e) => setAgendaRequiresApproval(e.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-navy focus:ring-navy"
               />
-              <span className="font-medium text-gray-700">Requires board approval</span>
+              <span className="font-medium text-gray-700">Requires board approval (board vote)</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={agendaRequiresCommitteeApproval}
+                onChange={(e) => setAgendaRequiresCommitteeApproval(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span className="font-medium text-gray-700">Requires committee approval</span>
             </label>
             <div className="flex gap-3">
               <button
-                onClick={handleAddAgendaItem}
+                onClick={handleSaveAgendaItem}
                 disabled={!agendaTitle || agendaSaving}
                 className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark disabled:opacity-50"
               >
-                {agendaSaving ? 'Saving...' : 'Save'}
+                {agendaSaving ? 'Saving...' : editingAgendaId ? 'Update' : 'Save'}
               </button>
               <button
-                onClick={() => setShowAgendaForm(false)}
+                onClick={resetAgendaForm}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
@@ -859,6 +1024,11 @@ export default function MeetingDetailPage() {
                           Board Vote Required
                         </span>
                       )}
+                      {item.requires_committee_approval && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                          Committee Approval Required
+                        </span>
+                      )}
                       {item.drive_file_url && (
                         <a
                           href={item.drive_file_url}
@@ -874,9 +1044,12 @@ export default function MeetingDetailPage() {
                         </a>
                       )}
                     </div>
-                    {item.presenter && (
+                    {item.presenters && item.presenters.length > 0 && (
                       <span className="text-sm text-gray-500">
-                        &mdash; {item.presenter.full_name}
+                        &mdash;{' '}
+                        {item.presenters
+                          .map((p) => (p.profile_id ? p.full_name : `${p.full_name} (guest)`))
+                          .join(', ')}
                       </span>
                     )}
                     {item.duration_minutes ? (
@@ -884,6 +1057,14 @@ export default function MeetingDetailPage() {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {canEdit && (
+                      <button
+                        onClick={() => startEditAgendaItem(item)}
+                        className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Edit
+                      </button>
+                    )}
                     <select
                       className="rounded-lg border border-gray-300 px-2 py-1 text-xs shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                       value={item.status}
@@ -910,6 +1091,17 @@ export default function MeetingDetailPage() {
                     boardProfiles={boardProfiles}
                     currentProfileId={profile.id}
                     canEdit={!!canEdit}
+                    scope="board"
+                  />
+                )}
+                {item.requires_committee_approval && profile && (
+                  <VotePanel
+                    agendaItemId={item.id}
+                    attendees={attendees}
+                    boardProfiles={boardProfiles}
+                    currentProfileId={profile.id}
+                    canEdit={!!canEdit}
+                    scope="committee"
                   />
                 )}
               </li>
@@ -922,9 +1114,9 @@ export default function MeetingDetailPage() {
       <div className="rounded-xl border border-gray-200 bg-white p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Action Items</h2>
-          {!showActionForm && (
+          {!showActionForm && canEdit && (
             <button
-              onClick={() => setShowActionForm(true)}
+              onClick={() => { resetActionForm(); setShowActionForm(true) }}
               className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark"
             >
               Add Action Item
@@ -994,14 +1186,14 @@ export default function MeetingDetailPage() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={handleAddActionItem}
+                onClick={handleSaveActionItem}
                 disabled={!actionTitle || !actionAssigneeId || actionSaving}
                 className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark disabled:opacity-50"
               >
-                {actionSaving ? 'Saving...' : 'Save'}
+                {actionSaving ? 'Saving...' : editingActionId ? 'Update' : 'Save'}
               </button>
               <button
-                onClick={() => setShowActionForm(false)}
+                onClick={resetActionForm}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
@@ -1056,6 +1248,23 @@ export default function MeetingDetailPage() {
                 >
                   {item.status.replace('_', ' ')}
                 </span>
+                {canEdit && (
+                  <button
+                    onClick={() =>
+                      startEditActionItem({
+                        id: item.id,
+                        title: item.title,
+                        description: item.description,
+                        assignee_id: item.assignee_id,
+                        due_date: item.due_date,
+                        priority: item.priority,
+                      })
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Edit
+                  </button>
+                )}
               </li>
             ))}
           </ul>

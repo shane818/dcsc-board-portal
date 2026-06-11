@@ -113,6 +113,8 @@ export interface MeetingMinutesForReview {
   created_at: string
 }
 
+export type VoteScope = 'board' | 'committee'
+
 export interface AgendaItem {
   id: string
   meeting_id: string
@@ -124,7 +126,24 @@ export interface AgendaItem {
   status: AgendaItemStatus
   drive_file_url: string | null
   requires_approval: boolean
+  requires_committee_approval: boolean
   created_at: string
+}
+
+export interface AgendaItemPresenter {
+  id: string
+  agenda_item_id: string
+  profile_id: string | null
+  guest_name: string | null
+  order_position: number
+  created_at: string
+}
+
+/** A presenter resolved for display: either a member (with full_name) or a guest. */
+export interface ResolvedPresenter {
+  profile_id: string | null
+  guest_name: string | null
+  full_name: string
 }
 
 export interface AgendaItemMotion {
@@ -139,6 +158,7 @@ export interface AgendaItemMotion {
   result: VoteResult | null
   notes: string | null
   recorded_by: string | null
+  vote_scope: VoteScope
   created_at: string
   updated_at: string
 }
@@ -148,6 +168,7 @@ export interface AgendaItemRollCall {
   agenda_item_id: string
   profile_id: string
   vote: VoteChoice
+  vote_scope: VoteScope
 }
 
 export interface MeetingAttendee {
@@ -264,7 +285,10 @@ export interface ActionItemWithAssignee extends ActionItem {
 
 /** Agenda item with presenter name and motion data */
 export interface AgendaItemWithPresenter extends AgendaItem {
+  /** Legacy single presenter (kept for safety; prefer `presenters`). */
   presenter: { full_name: string } | null
+  /** All presenters (members + guests), ordered. */
+  presenters: ResolvedPresenter[]
 }
 
 export interface AgendaItemMotionWithNames extends AgendaItemMotion {

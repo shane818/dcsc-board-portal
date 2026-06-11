@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAgendaItemMotion } from '../../hooks/useAgendaItemMotion'
-import type { MeetingAttendeeWithProfile, Profile, VoteType, VoteResult, VoteChoice } from '../../types/database'
+import type { MeetingAttendeeWithProfile, Profile, VoteType, VoteResult, VoteChoice, VoteScope } from '../../types/database'
 
 const RESULT_LABELS: { value: VoteResult; label: string; color: string }[] = [
   { value: 'carried', label: 'Carried', color: 'text-green-700' },
@@ -21,10 +21,12 @@ interface Props {
   boardProfiles: Profile[]
   currentProfileId: string
   canEdit: boolean
+  scope?: VoteScope
 }
 
-export default function VotePanel({ agendaItemId, attendees, boardProfiles, currentProfileId, canEdit }: Props) {
-  const { motion, rollCalls, isLoading, refetch } = useAgendaItemMotion(agendaItemId)
+export default function VotePanel({ agendaItemId, attendees, boardProfiles, currentProfileId, canEdit, scope = 'board' }: Props) {
+  const { motion, rollCalls, isLoading, refetch } = useAgendaItemMotion(agendaItemId, scope)
+  const scopeLabel = scope === 'committee' ? 'Committee Approval' : 'Vote'
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +93,7 @@ export default function VotePanel({ agendaItemId, attendees, boardProfiles, curr
       result: result as VoteResult,
       notes: notes.trim() || null,
       recorded_by: currentProfileId,
+      vote_scope: scope,
     }
 
     let motionError: string | null = null
@@ -115,14 +118,19 @@ export default function VotePanel({ agendaItemId, attendees, boardProfiles, curr
 
     // Save roll call votes
     if (voteType === 'roll_call') {
-      // Delete existing and re-insert
-      await supabase.from('agenda_item_roll_calls').delete().eq('agenda_item_id', agendaItemId)
+      // Delete existing (for this scope) and re-insert
+      await supabase
+        .from('agenda_item_roll_calls')
+        .delete()
+        .eq('agenda_item_id', agendaItemId)
+        .eq('vote_scope', scope)
       const rollCallRows = Object.entries(rollCallVotes)
         .filter(([, v]) => v)
         .map(([profileId, vote]) => ({
           agenda_item_id: agendaItemId,
           profile_id: profileId,
           vote,
+          vote_scope: scope,
         }))
       if (rollCallRows.length > 0) {
         const { error } = await supabase.from('agenda_item_roll_calls').insert(rollCallRows)
@@ -179,19 +187,19 @@ export default function VotePanel({ agendaItemId, attendees, boardProfiles, curr
               onClick={openForm}
               className="text-xs text-navy hover:text-navy-dark font-medium"
             >
-              Edit Vote
+              Edit {scopeLabel}
             </button>
           )}
         </div>
       )}
 
-      {/* Record Vote button */}
+      {/* Record button */}
       {!motion && !showForm && canEdit && (
         <button
           onClick={openForm}
           className="rounded-lg border border-navy/30 bg-navy/5 px-3 py-1.5 text-xs font-medium text-navy hover:bg-navy/10"
         >
-          Record Vote
+          Record {scopeLabel}
         </button>
       )}
 
@@ -369,7 +377,7 @@ export default function VotePanel({ agendaItemId, attendees, boardProfiles, curr
               disabled={!result || saving}
               className="rounded-lg bg-navy px-4 py-2 text-xs font-medium text-white hover:bg-navy-dark disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Vote'}
+              {saving ? 'Saving...' : `Save ${scopeLabel}`}
             </button>
             <button
               onClick={() => setShowForm(false)}

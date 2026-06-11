@@ -1073,4 +1073,49 @@ LIMIT 50;
 
 ---
 
+## Concurrent Editing — Known Limitation & Risk
+
+**Status:** documented, not yet mitigated (as of June 2026).
+
+### Current behavior
+- **No realtime on meeting data.** All meeting-related hooks (`useMeeting`,
+  `useAgendaItems`, `useActionItems`, `useMeetingMinutes`, `useAgendaItemMotion`)
+  are **one-time fetch + manual `refetch()`**. Only the messaging system
+  (`useMessages`, `useReactions`) uses Supabase Realtime. So if two people view
+  the same meeting, neither sees the other's changes until they refetch or reload.
+- **Last-write-wins on every write.** All updates are keyed only by `id`
+  (`.update(...).eq('id', …)`). There is no version column check, no optimistic
+  concurrency control, no locking, and no "someone else is editing" indicator.
+- `meeting_minutes` has an `updated_at` column (auto-maintained by a trigger) but
+  it is **never read or compared** by the client.
+
+### The main risk: simultaneous minutes editing
+During a live board meeting, if two officers both open the same draft minutes:
+1. Both load the same content into local state.
+2. Both type changes (no DB writes yet).
+3. Whoever clicks **Save Draft** second **silently overwrites** the first
+   person's work. No warning, no merge, no conflict prompt.
+
+Smaller-blast-radius versions of the same race exist for agenda status changes,
+action item edits, and vote recording — but minutes content loss is the worst case.
+
+### Interim operational guidance
+- Designate **one minute-taker** per meeting. Others should avoid editing the
+  minutes simultaneously.
+- After someone else has made changes, **reload the page** before editing to
+  avoid working from stale data.
+
+### Recommended future fixes (priority order)
+1. **Presence indicator** on the minutes editor via a Supabase Realtime channel —
+   "Officer X is also editing these minutes."
+2. **Optimistic concurrency on minutes** using the existing `updated_at`: send the
+   last-known timestamp with the update, reject if it changed server-side, and
+   prompt the user to refresh/merge.
+3. **Realtime auto-refetch** on agenda items, action items, and minutes so changes
+   from other users appear within seconds.
+4. **Collaborative editing** (Yjs/CRDT) — only if true simultaneous editing becomes
+   a real need; significant added complexity.
+
+---
+
 *End of Engineering Reference*
