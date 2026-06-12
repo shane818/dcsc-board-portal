@@ -12,11 +12,24 @@ export function useBoardRoster() {
     setIsLoading(true)
     supabase
       .from('board_roster')
-      .select('*')
+      .select(
+        '*, profile:profiles!board_roster_profile_id_fkey(invite_pending)'
+      )
       .order('sort_order', { ascending: true })
       .then(({ data, error }) => {
-        if (error) setError(error.message)
-        else setData((data as BoardRosterEntry[]) ?? [])
+        if (error) {
+          setError(error.message)
+        } else {
+          const mapped: BoardRosterEntry[] = ((data as any[]) ?? []).map((row) => {
+            let account_status: BoardRosterEntry['account_status'] = 'none'
+            if (row.profile_id) {
+              account_status = row.profile?.invite_pending ? 'pending' : 'active'
+            }
+            const { profile: _p, ...rest } = row
+            return { ...(rest as BoardRosterEntry), account_status }
+          })
+          setData(mapped)
+        }
         setIsLoading(false)
       })
   }, [refetchCount])

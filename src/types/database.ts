@@ -346,6 +346,8 @@ export interface BoardRosterEntry {
   is_active: boolean
   created_at: string
   updated_at: string
+  /** Login-account status, populated by useBoardRoster (not a DB column). */
+  account_status?: 'active' | 'pending' | 'none'
 }
 
 // ---- Google Drive types ----

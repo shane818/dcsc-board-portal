@@ -27,6 +27,12 @@ function fullName(e: BoardRosterEntry): string {
   return `${e.first_name} ${e.last_name}`.trim()
 }
 
+const ACCOUNT_BADGE: Record<NonNullable<BoardRosterEntry['account_status']>, { label: string; cls: string; title: string }> = {
+  active: { label: 'Active', cls: 'bg-green-100 text-green-800', title: 'Has logged into the portal' },
+  pending: { label: 'Pending', cls: 'bg-amber-100 text-amber-800', title: 'Invited — has not logged in yet' },
+  none: { label: 'No account', cls: 'bg-gray-100 text-gray-500', title: 'No portal login account linked' },
+}
+
 interface Props {
   editable: boolean
 }
@@ -203,6 +209,7 @@ export default function BoardRosterChart({ editable }: Props) {
                 <th className="px-3 py-2">Term</th>
                 <th className="px-3 py-2">Committee</th>
                 <th className="px-3 py-2">Leadership</th>
+                <th className="px-3 py-2">Account</th>
                 {editable && <th className="px-3 py-2"></th>}
               </tr>
             </thead>
@@ -210,14 +217,7 @@ export default function BoardRosterChart({ editable }: Props) {
               {sorted.map((e) => (
                 <tr key={e.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2 text-gray-400">{e.sort_order}</td>
-                  <td className="px-3 py-2 font-medium text-gray-900">
-                    {fullName(e)}
-                    {!e.profile_id && (
-                      <span className="ml-2 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500" title="No portal login account linked">
-                        no login
-                      </span>
-                    )}
-                  </td>
+                  <td className="px-3 py-2 font-medium text-gray-900">{fullName(e)}</td>
                   <td className="px-3 py-2 text-gray-600">{fmtDate(e.joined_date)}</td>
                   <td className="px-3 py-2 text-gray-600">{fmtDate(e.term_expiration)}</td>
                   <td className="px-3 py-2">
@@ -238,6 +238,16 @@ export default function BoardRosterChart({ editable }: Props) {
                     ) : (
                       <span className="text-gray-300">—</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {(() => {
+                      const s = ACCOUNT_BADGE[e.account_status ?? 'none']
+                      return (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`} title={s.title}>
+                          {s.label}
+                        </span>
+                      )
+                    })()}
                   </td>
                   {editable && (
                     <td className="px-3 py-2 whitespace-nowrap text-right">
