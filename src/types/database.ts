@@ -339,7 +339,10 @@ export interface BoardRosterEntry {
   joined_date: string | null
   term_expiration: string | null
   term_number: number | null
+  /** Original spreadsheet code (e.g. "G&S", "F&A"); kept for reference. */
   committee: string | null
+  /** Expanded canonical committees the member serves on. */
+  committees: string[]
   leadership: string | null
   profile_id: string | null
   sort_order: number

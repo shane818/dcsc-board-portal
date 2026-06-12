@@ -5,6 +5,16 @@ import type { BoardRosterEntry } from '../../types/database'
 
 type View = 'table' | 'matrix' | 'grouped'
 
+// The canonical committees, shown as the fixed matrix columns / grouped cards.
+const CANONICAL_COMMITTEES = [
+  'Arts',
+  'Nominating & Governance',
+  'Finance',
+  'Executive',
+  'Audit',
+  'Sustainability',
+]
+
 const TERM_LABEL: Record<number, string> = { 1: '1st', 2: '2nd', 3: '3rd' }
 
 function termBadgeClasses(term: number | null): string {
@@ -50,10 +60,8 @@ export default function BoardRosterChart({ editable }: Props) {
 
   const sorted = [...roster].sort((a, b) => a.sort_order - b.sort_order)
 
-  // Distinct committees (for matrix columns + grouped view)
-  const committees = Array.from(
-    new Set(sorted.map((e) => e.committee).filter(Boolean) as string[])
-  ).sort()
+  // The fixed set of canonical committees (always shown as matrix columns / groups).
+  const committees = CANONICAL_COMMITTEES
 
   function startEdit(e: BoardRosterEntry) {
     setEditingId(e.id)
@@ -94,7 +102,7 @@ export default function BoardRosterChart({ editable }: Props) {
       joined_date: form.joined_date || null,
       term_expiration: form.term_expiration || null,
       term_number: form.term_number ?? null,
-      committee: form.committee?.trim() || null,
+      committees: form.committees ?? [],
       leadership: form.leadership?.trim() || null,
       sort_order: form.sort_order ?? 0,
     }
@@ -174,8 +182,31 @@ export default function BoardRosterChart({ editable }: Props) {
                 <option value="3">3rd</option>
               </select>
             </label>
-            <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Committee"
-              value={form.committee ?? ''} onChange={(e) => setForm({ ...form, committee: e.target.value })} />
+            <div className="sm:col-span-2">
+              <p className="text-xs text-gray-600 mb-1">Committees</p>
+              <div className="flex flex-wrap gap-2">
+                {CANONICAL_COMMITTEES.map((c) => {
+                  const checked = (form.committees ?? []).includes(c)
+                  return (
+                    <label key={c} className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const cur = form.committees ?? []
+                          setForm({
+                            ...form,
+                            committees: e.target.checked ? [...cur, c] : cur.filter((x) => x !== c),
+                          })
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      {c}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
             <input className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Leadership role"
               value={form.leadership ?? ''} onChange={(e) => setForm({ ...form, leadership: e.target.value })} />
             <label className="text-xs text-gray-600">Sort order
@@ -229,7 +260,19 @@ export default function BoardRosterChart({ editable }: Props) {
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-gray-700">{e.committee ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-700">
+                    {e.committees && e.committees.length > 0 ? (
+                      <span className="flex flex-wrap gap-1">
+                        {e.committees.map((c) => (
+                          <span key={c} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                            {c}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     {e.leadership ? (
                       <span className="rounded-full bg-navy/10 px-2 py-0.5 text-xs font-medium text-navy">
@@ -281,7 +324,7 @@ export default function BoardRosterChart({ editable }: Props) {
                   <td className="px-3 py-2 font-medium text-gray-900 sticky left-0 bg-white">{fullName(e)}</td>
                   {committees.map((c) => (
                     <td key={c} className="px-2 py-2 text-center">
-                      {e.committee === c ? (
+                      {(e.committees ?? []).includes(c) ? (
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-navy" title={`${fullName(e)} — ${c}`} />
                       ) : (
                         <span className="text-gray-200">·</span>
@@ -294,7 +337,9 @@ export default function BoardRosterChart({ editable }: Props) {
             </tbody>
           </table>
           <p className="mt-2 text-xs text-gray-400">
-            ● = committee assignment. Each member is recorded with one primary committee.
+            ● = committee assignment. Members may serve on more than one committee
+            (combined codes like G&S = Governance + Sustainability, F&A = Finance + Arts,
+            S&A = Sustainability + Audit).
           </p>
         </div>
       )}
@@ -303,7 +348,7 @@ export default function BoardRosterChart({ editable }: Props) {
       {view === 'grouped' && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {committees.map((c) => {
-            const members = sorted.filter((e) => e.committee === c)
+            const members = sorted.filter((e) => (e.committees ?? []).includes(c))
             return (
               <div key={c} className="rounded-lg border border-gray-200 p-4">
                 <h4 className="text-sm font-semibold text-gray-900">{c}</h4>
@@ -324,11 +369,11 @@ export default function BoardRosterChart({ editable }: Props) {
             )
           })}
           {/* Members with no committee */}
-          {sorted.some((e) => !e.committee) && (
+          {sorted.some((e) => !e.committees || e.committees.length === 0) && (
             <div className="rounded-lg border border-dashed border-gray-200 p-4">
               <h4 className="text-sm font-semibold text-gray-500">No committee</h4>
               <ul className="mt-2 space-y-1">
-                {sorted.filter((e) => !e.committee).map((e) => (
+                {sorted.filter((e) => !e.committees || e.committees.length === 0).map((e) => (
                   <li key={e.id} className="flex items-center justify-between text-sm">
                     <span className="text-gray-700">{fullName(e)}</span>
                     {e.leadership && (
