@@ -257,6 +257,16 @@ export interface MeetingMinutes {
   updated_at: string
 }
 
+/** Informal rich-text (HTML) notes for a meeting — one per meeting. */
+export interface MeetingNotes {
+  id: string
+  meeting_id: string
+  content_html: string
+  updated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 // ---- Utility types ----
 
 /** Membership with joined committee data */

@@ -1129,4 +1129,38 @@ are not yet.
 
 ---
 
+## Meeting Notes (rich text) vs. Minutes (markdown)
+
+Two distinct per-meeting writing surfaces:
+
+- **Minutes** (`meeting_minutes.content`) are **markdown**. They feed three
+  markdown-assuming systems, which is *why minutes are intentionally NOT rich
+  HTML*: (1) "Generate from Template" emits markdown (`src/lib/minutesTemplate.ts`),
+  (2) the approval → PDF pipeline (`supabase/functions/archive-minutes/index.ts`)
+  runs a custom `markdownToHtml()` (single-level bullets only, no numbered lists)
+  → Google Doc → PDF, and (3) Board Resources archives that PDF. Converting
+  minutes to rich text would mean reworking all three + upgrading the converter.
+
+- **Notes** (`meeting_notes.content_html`) are **rich HTML** — a separate table,
+  one row per meeting (migration `20260422000000_meeting_notes.sql`). Informal
+  working notes with bullets/numbered lists/bold/italic/headings via a
+  dependency-free `contentEditable` WYSIWYG (`NotesEditor.tsx`, using
+  `document.execCommand`). Notes do **not** flow into minutes, PDF archiving, or
+  Board Resources — they're a standalone scratch space.
+
+- **Edit access** for notes reuses the **same `can_edit_minutes()`** lock as
+  minutes (designated minute-taker + Chair/admins). No separate permission model.
+
+- **Download:** notes can be saved client-side as **Word (.doc)** (HTML wrapped in
+  a Word shell, `application/msword`) or **PDF** (opens the browser print dialog →
+  "Save as PDF"). Shared helpers in `src/lib/download.ts` (`downloadDoc`,
+  `openPrintWindow`, `downloadBlob`); the minutes `.md` download was refactored to
+  use `downloadBlob` too.
+
+- **Note on `execCommand`:** deprecated but universally supported; chosen as the
+  zero-dependency path for a simple editor. If a richer editor is ever needed,
+  swap `NotesEditor.tsx` for Tiptap without touching the schema (still HTML).
+
+---
+
 *End of Engineering Reference*

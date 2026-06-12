@@ -15,3 +15,13 @@
     font-family: Georgia, 'Times New Roman', serif;
   }
 }
+
+/* Rich-text notes content: restore list/heading styling that Tailwind's
+   preflight removes, scoped to the notes editor + read-only render. */
+.notes-content ul { list-style: disc; margin-left: 1.5rem; }
+.notes-content ol { list-style: decimal; margin-left: 1.5rem; }
+.notes-content li { margin: 0.125rem 0; }
+.notes-content h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.1rem; font-weight: 700; color: #2B2D6B; margin: 0.5rem 0 0.25rem; }
+.notes-content h3 { font-size: 1rem; font-weight: 700; color: #374151; margin: 0.4rem 0 0.2rem; }
+.notes-content p { margin: 0.25rem 0; }
+.notes-content a { color: #2B2D6B; text-decoration: underline; }

@@ -19,6 +19,9 @@ import { buildMinutesTemplate } from '../lib/minutesTemplate'
 import { archiveMinutes } from '../lib/archiveMinutes'
 import { buildMeetingSummary } from '../lib/meetingSummary'
 import { findApprovedMinutesFolderId } from '../lib/approvedMinutesFolder'
+import { downloadBlob, downloadDoc, openPrintWindow, safeFilename } from '../lib/download'
+import NotesEditor, { sanitizeHtml } from '../components/meetings/NotesEditor'
+import { useMeetingNotes } from '../hooks/useMeetingNotes'
 import { useNavigate } from 'react-router-dom'
 import type { AgendaItemStatus, ActionItemPriority, MeetingStatus } from '../types/database'
 
@@ -111,6 +114,7 @@ export default function MeetingDetailPage() {
   const { data: agendaItems, isLoading: agendaLoading, refetch: refetchAgenda } = useAgendaItems(id)
   const { data: actionItems, isLoading: actionsLoading, refetch: refetchActions } = useAllActionItems({ meetingId: id })
   const { data: minutes, isLoading: minutesLoading, refetch: refetchMinutes } = useMeetingMinutes(id)
+  const { data: notes, isLoading: notesLoading, refetch: refetchNotes } = useMeetingNotes(id)
   const { data: profiles } = useProfiles()
   const { data: allProfiles } = useAllProfiles(true)
   const { data: attendees } = useMeetingAttendees(id)
@@ -180,6 +184,11 @@ export default function MeetingDetailPage() {
   const [showAssignMinuteTaker, setShowAssignMinuteTaker] = useState(false)
   const [assigningMinuteTaker, setAssigningMinuteTaker] = useState(false)
 
+  // Notes state
+  const [notesHtml, setNotesHtml] = useState('')
+  const [notesInitialized, setNotesInitialized] = useState(false)
+  const [notesSaving, setNotesSaving] = useState(false)
+
   // General error state
   const [sectionError, setSectionError] = useState<string | null>(null)
 
@@ -195,6 +204,11 @@ export default function MeetingDetailPage() {
     setMinutesContent(minutes.content ?? '')
     setMinutesDriveUrl(minutes.drive_file_url ?? '')
     setMinutesInitialized(true)
+  }
+
+  if (!notesLoading && !notesInitialized) {
+    setNotesHtml(notes?.content_html ?? '')
+    setNotesInitialized(true)
   }
 
   const canEdit =
@@ -597,22 +611,54 @@ export default function MeetingDetailPage() {
 
   function handleDownloadDraft() {
     if (!meeting) return
-    const dateLabel = new Date(meeting.meeting_date)
-      .toISOString()
-      .slice(0, 10) // YYYY-MM-DD
-    const safeTitle = meeting.title.replace(/[<>:"/\\|?*]/g, '').trim()
-    const filename = `${dateLabel} - ${safeTitle} (draft).md`
-    const blob = new Blob([minutesContent || '# Empty draft'], {
-      type: 'text/markdown;charset=utf-8',
+    const dateLabel = new Date(meeting.meeting_date).toISOString().slice(0, 10)
+    const filename = `${dateLabel} - ${safeFilename(meeting.title)} (draft).md`
+    downloadBlob(filename, minutesContent || '# Empty draft', 'text/markdown;charset=utf-8')
+  }
+
+  // ---- Notes ----
+
+  async function handleSaveNotes() {
+    if (!id || !profile) return
+    setNotesSaving(true)
+    setSectionError(null)
+    try {
+      const { error } = await supabase
+        .from('meeting_notes')
+        .upsert(
+          { meeting_id: id, content_html: sanitizeHtml(notesHtml), updated_by: profile.id },
+          { onConflict: 'meeting_id' }
+        )
+      if (error) throw error
+      refetchNotes()
+    } catch (err) {
+      setSectionError((err as Error).message)
+    } finally {
+      setNotesSaving(false)
+    }
+  }
+
+  function notesDocTitle(): string {
+    if (!meeting) return 'Meeting Notes'
+    const dateLabel = new Date(meeting.meeting_date).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
     })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    return `${meeting.title} — Notes (${dateLabel})`
+  }
+
+  function handleDownloadNotesDoc() {
+    if (!meeting) return
+    const dateLabel = new Date(meeting.meeting_date).toISOString().slice(0, 10)
+    const filename = `${dateLabel} - ${safeFilename(meeting.title)} - Notes.doc`
+    const body = `<h1>${notesDocTitle()}</h1>${sanitizeHtml(notesHtml) || '<p>(No notes)</p>'}`
+    downloadDoc(filename, notesDocTitle(), body)
+  }
+
+  function handleDownloadNotesPdf() {
+    const body = `<h1>${notesDocTitle()}</h1>${sanitizeHtml(notesHtml) || '<p>(No notes)</p>'}`
+    openPrintWindow(notesDocTitle(), body)
   }
 
   function handleGenerateSummary() {
@@ -1546,6 +1592,66 @@ export default function MeetingDetailPage() {
                   Revert to Draft
                 </button>
               </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Notes */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Notes</h2>
+            <p className="text-xs text-gray-500">
+              Informal working notes (separate from the formal minutes).
+              {!canEditMinutes && ' Editing is limited to the minute-taker / Chair / admins.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadNotesDoc}
+              className="text-xs font-medium text-navy hover:text-navy-dark"
+              title="Download as a Word document"
+            >
+              ⬇ Word (.doc)
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadNotesPdf}
+              className="text-xs font-medium text-navy hover:text-navy-dark"
+              title="Open print dialog to save as PDF"
+            >
+              ⬇ PDF
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          {notesLoading ? (
+            <p className="text-sm text-gray-400">Loading notes…</p>
+          ) : (
+            <NotesEditor
+              value={notesHtml}
+              editable={!!canEditMinutes}
+              onChange={setNotesHtml}
+            />
+          )}
+        </div>
+
+        {canEditMinutes && (
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={handleSaveNotes}
+              disabled={notesSaving}
+              className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-dark disabled:opacity-50"
+            >
+              {notesSaving ? 'Saving…' : 'Save Notes'}
+            </button>
+            {notes?.updated_at && (
+              <span className="text-xs text-gray-400">
+                Last saved {formatDate(notes.updated_at)}
+              </span>
             )}
           </div>
         )}
