@@ -1163,4 +1163,26 @@ Two distinct per-meeting writing surfaces:
 
 ---
 
+## Board Roster (governance record)
+
+`public.board_roster` (migration `20260423000000_board_roster.sql`) is the
+authoritative governance record of every board seat — name, joined date, term
+expiration, term number (1–3; max 3 terms × 3 yrs), committee, and leadership.
+
+- **Decoupled from login accounts.** Unlike `profiles` (which requires a unique
+  email for Google login), roster rows need no email — so the *full* board can be
+  tracked even before members have portal accounts. An optional `profile_id`
+  links a seat to a login account when one exists.
+- **Committee/leadership are free text** (e.g. "F&A", "Governance", "Board Chair")
+  recorded exactly as the governance spreadsheet keeps them — deliberately NOT
+  mapped to the portal's `committees` / `committee_memberships` (which model
+  per-meeting access, a different concern).
+- **Surfaced under Nominating & Governance.** `CommitteesPage` shows a "Board
+  Roster & Chart" tab only for the committee named `Nominating and Governance`,
+  rendering `BoardRosterChart` (table + committee matrix + grouped-by-committee
+  views). Read for all; officer-editable. Hook: `useBoardRoster`.
+- RLS: SELECT for any authenticated user; INSERT/UPDATE/DELETE for `is_officer()`.
+
+---
+
 *End of Engineering Reference*

@@ -330,6 +330,24 @@ export interface BoardResource {
   updated_at: string
 }
 
+/** A seat on the board roster — the authoritative governance record,
+ *  independent of login accounts. Optionally linked to a profile. */
+export interface BoardRosterEntry {
+  id: string
+  first_name: string
+  last_name: string
+  joined_date: string | null
+  term_expiration: string | null
+  term_number: number | null
+  committee: string | null
+  leadership: string | null
+  profile_id: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 // ---- Google Drive types ----
 
 /** File metadata returned from Google Drive API via the Edge Function */

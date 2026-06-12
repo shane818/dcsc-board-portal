@@ -5,9 +5,13 @@ import { useCommitteeMembers } from '../hooks/useCommitteeMembers'
 import { useDriveFiles } from '../hooks/useDriveFiles'
 import { getDriveFileUrl } from '../lib/drive'
 import DriveViewer from '../components/DriveViewer'
+import BoardRosterChart from '../components/board/BoardRosterChart'
 import type { CommitteeRole, DriveFile } from '../types/database'
 
-type CommitteeTab = 'members' | 'documents'
+type CommitteeTab = 'members' | 'documents' | 'roster'
+
+// The committee that owns the board roster + committee chart view.
+const ROSTER_COMMITTEE_NAME = 'Nominating and Governance'
 
 const mimeTypeLabels: Record<string, string> = {
   'application/vnd.google-apps.document': 'Google Doc',
@@ -102,21 +106,31 @@ export default function CommitteesPage() {
                   </div>
                 </div>
 
-                {isExpanded && (
+                {isExpanded && (() => {
+                  const isRosterCommittee = committee.name === ROSTER_COMMITTEE_NAME
+                  const tabs: CommitteeTab[] = isRosterCommittee
+                    ? ['members', 'documents', 'roster']
+                    : ['members', 'documents']
+                  const tabLabel: Record<CommitteeTab, string> = {
+                    members: 'Members',
+                    documents: 'Documents',
+                    roster: 'Board Roster & Chart',
+                  }
+                  return (
                   <div className="border-t border-gray-100">
                     {/* Tab bar */}
                     <div className="flex border-b border-gray-100 px-6">
-                      {(['members', 'documents'] as CommitteeTab[]).map((t) => (
+                      {tabs.map((t) => (
                         <button
                           key={t}
                           onClick={() => setTab(committee.id, t)}
-                          className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium capitalize transition-colors ${
+                          className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                             tab === t
                               ? 'border-navy text-navy'
                               : 'border-transparent text-gray-500 hover:text-gray-700'
                           }`}
                         >
-                          {t}
+                          {tabLabel[t]}
                         </button>
                       ))}
                     </div>
@@ -124,6 +138,8 @@ export default function CommitteesPage() {
                     <div className="px-6 py-4">
                       {tab === 'members' ? (
                         <CommitteeMembersList committeeId={committee.id} />
+                      ) : tab === 'roster' ? (
+                        <BoardRosterChart editable={isOfficer} />
                       ) : (
                         <CommitteeDocuments
                           committeeId={committee.id}
@@ -133,7 +149,8 @@ export default function CommitteesPage() {
                       )}
                     </div>
                   </div>
-                )}
+                  )
+                })()}
               </div>
             )
           })}
