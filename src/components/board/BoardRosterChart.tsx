@@ -50,6 +50,7 @@ interface Props {
 export default function BoardRosterChart({ editable }: Props) {
   const { data: roster, isLoading, refetch } = useBoardRoster()
   const [view, setView] = useState<View>('table')
+  const [showInactive, setShowInactive] = useState(false)
 
   // Edit form state
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -58,7 +59,10 @@ export default function BoardRosterChart({ editable }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const sorted = [...roster].sort((a, b) => a.sort_order - b.sort_order)
+  const inactiveCount = roster.filter((e) => !e.is_active).length
+  const sorted = [...roster]
+    .filter((e) => showInactive || e.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order)
 
   // The fixed set of canonical committees (always shown as matrix columns / groups).
   const committees = CANONICAL_COMMITTEES
@@ -110,6 +114,7 @@ export default function BoardRosterChart({ editable }: Props) {
       ),
       leadership: form.leadership?.trim() || null,
       sort_order: form.sort_order ?? 0,
+      is_active: form.is_active ?? true,
     }
     const res = editingId
       ? await supabase.from('board_roster').update(payload).eq('id', editingId)
@@ -150,14 +155,27 @@ export default function BoardRosterChart({ editable }: Props) {
             </button>
           ))}
         </div>
-        {editable && !showAdd && !editingId && (
-          <button
-            onClick={startAdd}
-            className="rounded-lg bg-navy px-3 py-1.5 text-sm font-medium text-white hover:bg-navy-dark"
-          >
-            + Add Member
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {inactiveCount > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Show inactive ({inactiveCount})
+            </label>
+          )}
+          {editable && !showAdd && !editingId && (
+            <button
+              onClick={startAdd}
+              className="rounded-lg bg-navy px-3 py-1.5 text-sm font-medium text-white hover:bg-navy-dark"
+            >
+              + Add Member
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -234,6 +252,12 @@ export default function BoardRosterChart({ editable }: Props) {
               <input type="number" className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 value={form.sort_order ?? 0} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })} />
             </label>
+            <label className="flex items-center gap-2 text-xs text-gray-600 sm:col-span-2">
+              <input type="checkbox" checked={form.is_active ?? true}
+                onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+                className="rounded border-gray-300" />
+              Active board member (uncheck to mark inactive / rolled off)
+            </label>
           </div>
           <div className="flex gap-2">
             <button onClick={saveForm} disabled={saving}
@@ -267,9 +291,14 @@ export default function BoardRosterChart({ editable }: Props) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {sorted.map((e) => (
-                <tr key={e.id} className="hover:bg-gray-50">
+                <tr key={e.id} className={`hover:bg-gray-50 ${!e.is_active ? 'opacity-50' : ''}`}>
                   <td className="px-3 py-2 text-gray-400">{e.sort_order}</td>
-                  <td className="px-3 py-2 font-medium text-gray-900">{fullName(e)}</td>
+                  <td className="px-3 py-2 font-medium text-gray-900">
+                    {fullName(e)}
+                    {!e.is_active && (
+                      <span className="ml-2 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-600">Inactive</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-gray-600">{fmtDate(e.joined_date)}</td>
                   <td className="px-3 py-2 text-gray-600">{fmtDate(e.term_expiration)}</td>
                   <td className="px-3 py-2">
