@@ -7,6 +7,11 @@ import type { ActionItem, ActionItemPriority } from '../types/database'
 interface ActionItemFormProps {
   meetingId?: string
   existingItem?: ActionItem
+  /** Prefill for new items created from elsewhere (e.g. a tagged board resource). */
+  initialTitle?: string
+  initialDescription?: string
+  /** When creating from a board resource, link the new item back to it. */
+  sourceResourceId?: string
   onSave: () => void
   onCancel: () => void
 }
@@ -14,14 +19,17 @@ interface ActionItemFormProps {
 export default function ActionItemForm({
   meetingId,
   existingItem,
+  initialTitle,
+  initialDescription,
+  sourceResourceId,
   onSave,
   onCancel,
 }: ActionItemFormProps) {
   const { profile } = useAuth()
   const { data: profiles } = useProfiles()
 
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(initialTitle ?? '')
+  const [description, setDescription] = useState(initialDescription ?? '')
   const [assigneeId, setAssigneeId] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [priority, setPriority] = useState<ActionItemPriority>('medium')
@@ -64,6 +72,7 @@ export default function ActionItemForm({
         ...payload,
         meeting_id: meetingId || null,
         created_by: profile.id,
+        source_resource_id: sourceResourceId || null,
       })
     }
 

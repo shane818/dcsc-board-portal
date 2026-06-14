@@ -45,7 +45,7 @@ export function useAllActionItems(filter: ActionItemsFilter = {}) {
     setIsLoading(true)
     let query = supabase
       .from('action_items')
-      .select('*, assignee:profiles!action_items_assignee_id_fkey(full_name), creator:profiles!action_items_created_by_fkey(full_name)')
+      .select('*, assignee:profiles!action_items_assignee_id_fkey(full_name), creator:profiles!action_items_created_by_fkey(full_name), source:board_resources!action_items_source_resource_id_fkey(title, drive_url)')
 
     if (filter.assigneeId) {
       query = query.eq('assignee_id', filter.assigneeId)

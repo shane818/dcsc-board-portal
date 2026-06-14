@@ -1363,6 +1363,16 @@ export default function MeetingDetailPage() {
                   <span className="ml-2 text-sm text-gray-500">
                     &mdash; {item.assignee.full_name}
                   </span>
+                  {item.source && item.source.drive_url && (
+                    <a
+                      href={item.source.drive_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-xs text-navy hover:underline"
+                    >
+                      📄 from board materials
+                    </a>
+                  )}
                   {item.due_date && (
                     <span className="ml-2 text-sm text-gray-400">
                       Due {formatDate(item.due_date)}

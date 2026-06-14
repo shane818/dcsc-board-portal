@@ -201,6 +201,7 @@ export interface ActionItem {
   status: ActionItemStatus
   priority: ActionItemPriority
   created_by: string
+  source_resource_id: string | null
   created_at: string
   updated_at: string
   completed_at: string | null
@@ -295,6 +296,7 @@ export interface MeetingWithDetails extends Meeting {
 export interface ActionItemWithAssignee extends ActionItem {
   assignee: { full_name: string }
   creator: { full_name: string }
+  source?: { title: string; drive_url: string | null } | null
 }
 
 /** Agenda item with presenter name and motion data */
@@ -325,10 +327,13 @@ export interface BoardResource {
   sort_order: number
   is_folder: boolean
   parent_id: string | null
+  action_tag: ResourceActionTag | null
   created_by: string | null
   created_at: string
   updated_at: string
 }
+
+export type ResourceActionTag = 'to_do' | 'to_vote' | 'to_review'
 
 /** A seat on the board roster — the authoritative governance record,
  *  independent of login accounts. Optionally linked to a profile. */

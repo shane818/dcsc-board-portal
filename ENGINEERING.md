@@ -1185,4 +1185,27 @@ expiration, term number (1–3; max 3 terms × 3 yrs), committee, and leadership
 
 ---
 
+## Board Resource Action Tags → Action Items
+
+Officers can tag a Board Resources **document** with an action label
+(`board_resources.action_tag` enum: `to_do | to_vote | to_review`; migration
+`20260426000000_resource_action_tags.sql`). The three tags behave differently:
+
+- **To Do / To Review** → can be turned into an **action item**. The document row
+  shows a "Create action item" button (officers) that opens the existing
+  `ActionItemForm` pre-filled with the doc's title/description + a link to the Drive
+  file; on save it sets `action_items.source_resource_id` back to the resource. Once
+  an item exists for a resource, the button shows "✓ Action created" (dedupe via a
+  query of action_items by source_resource_id). The created item shows a "📄 from
+  board materials" link on the Action Items page and the meeting action list.
+- **To Vote** → a **flag only**. To-vote docs surface in a collapsible "Needs a
+  Vote" panel at the top of Board Resources. It is intentionally NOT wired to the
+  agenda/voting system (`requires_approval` + motions) — linking a to-vote doc to a
+  next-meeting agenda item is future work.
+
+Net-new tagging primitive — there was no tag/label concept before this. Tags live on
+the persistent Board Resources library only (not per-meeting `document_references`).
+
+---
+
 *End of Engineering Reference*

@@ -2,9 +2,16 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import DriveViewer from '../components/DriveViewer'
-import type { BoardResource } from '../types/database'
+import ActionItemForm from '../components/ActionItemForm'
+import type { BoardResource, ResourceActionTag } from '../types/database'
 
 type FormMode = 'document' | 'folder'
+
+const TAG_META: Record<ResourceActionTag, { label: string; cls: string }> = {
+  to_do: { label: 'To Do', cls: 'bg-blue-100 text-blue-800' },
+  to_review: { label: 'To Review', cls: 'bg-amber-100 text-amber-800' },
+  to_vote: { label: 'To Vote', cls: 'bg-purple-100 text-purple-800' },
+}
 
 export default function BoardResourcesPage() {
   const { profile, isOfficer } = useAuth()
@@ -25,9 +32,18 @@ export default function BoardResourcesPage() {
   const [driveUrl, setDriveUrl] = useState('')
   const [category, setCategory] = useState('General')
   const [parentId, setParentId] = useState<string | null>(null)
+  const [actionTag, setActionTag] = useState<ResourceActionTag | ''>('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [viewerFile, setViewerFile] = useState<{ url: string; title: string } | null>(null)
+
+  // Action-tag filter
+  const [tagFilter, setTagFilter] = useState<ResourceActionTag | 'all'>('all')
+  // Create-action modal: the resource being turned into an action item
+  const [actionForResource, setActionForResource] = useState<BoardResource | null>(null)
+  // resource ids that already have an action item created from them
+  const [resourcesWithActions, setResourcesWithActions] = useState<Set<string>>(new Set())
+  const [needsVoteOpen, setNeedsVoteOpen] = useState(true)
 
   useEffect(() => {
     setIsLoading(true)
@@ -41,6 +57,14 @@ export default function BoardResourcesPage() {
         if (error) setError(error.message)
         else setResources((data as BoardResource[]) ?? [])
         setIsLoading(false)
+      })
+    // Which resources already have an action item created from them
+    supabase
+      .from('action_items')
+      .select('source_resource_id')
+      .not('source_resource_id', 'is', null)
+      .then(({ data }) => {
+        if (data) setResourcesWithActions(new Set(data.map((r: any) => r.source_resource_id)))
       })
   }, [refetchCount])
 
@@ -86,6 +110,7 @@ export default function BoardResourcesPage() {
     setDriveUrl(resource.drive_url ?? '')
     setCategory(resource.category)
     setParentId(resource.parent_id)
+    setActionTag(resource.action_tag ?? '')
     setShowForm(true)
   }
 
@@ -97,6 +122,7 @@ export default function BoardResourcesPage() {
     setDriveUrl('')
     setCategory('General')
     setParentId(currentFolderId)
+    setActionTag('')
     setShowForm(false)
     setFormError(null)
   }
@@ -122,6 +148,7 @@ export default function BoardResourcesPage() {
       category: category.trim(),
       is_folder: formMode === 'folder',
       parent_id: parentId,
+      action_tag: formMode === 'folder' ? null : (actionTag || null),
     }
 
     if (editingId) {
@@ -207,6 +234,53 @@ export default function BoardResourcesPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Needs a Vote panel (documents tagged To Vote, across all folders) */}
+      {(() => {
+        const toVote = resources.filter((r) => !r.is_folder && r.action_tag === 'to_vote')
+        if (toVote.length === 0) return null
+        return (
+          <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+            <button
+              onClick={() => setNeedsVoteOpen((o) => !o)}
+              className="flex w-full items-center justify-between text-sm font-semibold text-purple-800"
+            >
+              <span>🗳 Needs a Vote ({toVote.length})</span>
+              <span>{needsVoteOpen ? '▲' : '▼'}</span>
+            </button>
+            {needsVoteOpen && (
+              <ul className="mt-2 space-y-1">
+                {toVote.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      onClick={() => r.drive_url && setViewerFile({ url: r.drive_url, title: r.title })}
+                      className="text-sm text-purple-900 hover:underline"
+                    >
+                      📄 {r.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Action-tag filter */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-gray-400">Filter:</span>
+        {(['all', 'to_do', 'to_review', 'to_vote'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTagFilter(t)}
+            className={`rounded-full px-2.5 py-1 font-medium transition-colors ${
+              tagFilter === t ? 'bg-navy text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {t === 'all' ? 'All' : TAG_META[t].label}
+          </button>
+        ))}
       </div>
 
       {/* Breadcrumb */}
@@ -297,6 +371,26 @@ export default function BoardResourcesPage() {
             </select>
           </div>
 
+          {/* Action tag (documents only) */}
+          {formMode === 'document' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Action tag</label>
+              <select
+                value={actionTag}
+                onChange={(e) => setActionTag(e.target.value as ResourceActionTag | '')}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+              >
+                <option value="">None</option>
+                <option value="to_do">To Do</option>
+                <option value="to_review">To Review</option>
+                <option value="to_vote">To Vote</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-400">
+                "To Do" / "To Review" can be turned into an action item. "To Vote" appears in the Needs a Vote list.
+              </p>
+            </div>
+          )}
+
           {/* Parent folder picker */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Location</label>
@@ -346,7 +440,9 @@ export default function BoardResourcesPage() {
         <div className="space-y-6">
           {Object.entries(grouped).map(([cat, items]) => {
             const folders = items.filter((r) => r.is_folder)
-            const documents = items.filter((r) => !r.is_folder)
+            const documents = items
+              .filter((r) => !r.is_folder)
+              .filter((r) => tagFilter === 'all' || r.action_tag === tagFilter)
 
             return (
               <div key={cat}>
@@ -399,20 +495,42 @@ export default function BoardResourcesPage() {
                   {documents.map((resource) => (
                     <div key={resource.id} className="flex items-center justify-between px-6 py-4">
                       <div className="min-w-0 flex-1">
-                        <button
-                          onClick={() => resource.drive_url && setViewerFile({ url: resource.drive_url, title: resource.title })}
-                          className="flex items-center gap-2 text-sm font-medium text-navy hover:text-navy-dark hover:underline text-left"
-                        >
-                          <span className="text-base">&#128196;</span>
-                          {resource.title}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => resource.drive_url && setViewerFile({ url: resource.drive_url, title: resource.title })}
+                            className="flex items-center gap-2 text-sm font-medium text-navy hover:text-navy-dark hover:underline text-left"
+                          >
+                            <span className="text-base">&#128196;</span>
+                            {resource.title}
+                          </button>
+                          {resource.action_tag && (
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TAG_META[resource.action_tag].cls}`}>
+                              {TAG_META[resource.action_tag].label}
+                            </span>
+                          )}
+                        </div>
                         {resource.description && (
                           <p className="text-xs text-gray-500 mt-0.5 ml-7">{resource.description}</p>
                         )}
                       </div>
 
                       {isOfficer && (
-                        <div className="flex gap-2 ml-4 shrink-0">
+                        <div className="flex flex-wrap gap-2 ml-4 shrink-0">
+                          {/* Create action item for to_do / to_review */}
+                          {(resource.action_tag === 'to_do' || resource.action_tag === 'to_review') && (
+                            resourcesWithActions.has(resource.id) ? (
+                              <span className="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                                ✓ Action created
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setActionForResource(resource)}
+                                className="border border-navy/30 bg-navy/5 rounded-lg px-2.5 py-1 text-xs font-medium text-navy hover:bg-navy/10"
+                              >
+                                + Create action item
+                              </button>
+                            )
+                          )}
                           <button
                             onClick={() => startEdit(resource)}
                             className="border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
@@ -441,6 +559,23 @@ export default function BoardResourcesPage() {
           url={viewerFile.url}
           title={viewerFile.title}
           onClose={() => setViewerFile(null)}
+        />
+      )}
+
+      {/* Create action item from a tagged resource */}
+      {actionForResource && (
+        <ActionItemForm
+          initialTitle={actionForResource.title}
+          initialDescription={
+            (actionForResource.description ? actionForResource.description + '\n\n' : '') +
+            (actionForResource.drive_url ? `Document: ${actionForResource.drive_url}` : '')
+          }
+          sourceResourceId={actionForResource.id}
+          onSave={() => {
+            setActionForResource(null)
+            refetch()
+          }}
+          onCancel={() => setActionForResource(null)}
         />
       )}
     </div>

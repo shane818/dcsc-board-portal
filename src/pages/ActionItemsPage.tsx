@@ -162,6 +162,21 @@ export default function ActionItemsPage() {
                     </td>
                     <td className="py-3 pr-3 text-sm font-medium text-gray-900">
                       {item.title}
+                      {item.source && (
+                        item.source.drive_url ? (
+                          <a
+                            href={item.source.drive_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="ml-2 text-xs font-normal text-navy hover:underline"
+                          >
+                            📄 from board materials
+                          </a>
+                        ) : (
+                          <span className="ml-2 text-xs font-normal text-gray-400">📄 from board materials</span>
+                        )
+                      )}
                     </td>
                     <td className="py-3 pr-3 text-sm text-gray-600">
                       {item.assignee?.full_name ?? '—'}
