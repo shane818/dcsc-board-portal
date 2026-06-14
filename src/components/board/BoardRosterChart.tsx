@@ -5,14 +5,14 @@ import type { BoardRosterEntry } from '../../types/database'
 
 type View = 'table' | 'matrix' | 'grouped'
 
-// The canonical committees, shown as the fixed matrix columns / grouped cards.
+// The canonical committees (FY26), shown as the fixed matrix columns / grouped cards.
 const CANONICAL_COMMITTEES = [
-  'Arts',
-  'Nominating & Governance',
-  'Finance',
   'Executive',
-  'Audit',
+  'Finance',
+  'Nominating & Governance',
   'Sustainability',
+  'Arts',
+  'Corporate Partnership',
 ]
 
 const TERM_LABEL: Record<number, string> = { 1: '1st', 2: '2nd', 3: '3rd' }
@@ -103,6 +103,11 @@ export default function BoardRosterChart({ editable }: Props) {
       term_expiration: form.term_expiration || null,
       term_number: form.term_number ?? null,
       committees: form.committees ?? [],
+      committee_roles: Object.fromEntries(
+        Object.entries(form.committee_roles ?? {}).filter(
+          ([c, r]) => (form.committees ?? []).includes(c) && r
+        )
+      ),
       leadership: form.leadership?.trim() || null,
       sort_order: form.sort_order ?? 0,
     }
@@ -183,26 +188,42 @@ export default function BoardRosterChart({ editable }: Props) {
               </select>
             </label>
             <div className="sm:col-span-2">
-              <p className="text-xs text-gray-600 mb-1">Committees</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-xs text-gray-600 mb-1">Committees &amp; role</p>
+              <div className="space-y-1.5">
                 {CANONICAL_COMMITTEES.map((c) => {
                   const checked = (form.committees ?? []).includes(c)
                   return (
-                    <label key={c} className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          const cur = form.committees ?? []
-                          setForm({
-                            ...form,
-                            committees: e.target.checked ? [...cur, c] : cur.filter((x) => x !== c),
-                          })
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      {c}
-                    </label>
+                    <div key={c} className="flex items-center gap-2">
+                      <label className="flex w-52 items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const cur = form.committees ?? []
+                            setForm({
+                              ...form,
+                              committees: e.target.checked ? [...cur, c] : cur.filter((x) => x !== c),
+                            })
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        {c}
+                      </label>
+                      {checked && (
+                        <input
+                          type="text"
+                          placeholder="Role (e.g. Chair) — optional"
+                          value={form.committee_roles?.[c] ?? ''}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              committee_roles: { ...(form.committee_roles ?? {}), [c]: e.target.value },
+                            })
+                          }
+                          className="flex-1 rounded-lg border border-gray-300 px-2 py-1 text-xs"
+                        />
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -263,11 +284,14 @@ export default function BoardRosterChart({ editable }: Props) {
                   <td className="px-3 py-2 text-gray-700">
                     {e.committees && e.committees.length > 0 ? (
                       <span className="flex flex-wrap gap-1">
-                        {e.committees.map((c) => (
-                          <span key={c} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
-                            {c}
-                          </span>
-                        ))}
+                        {e.committees.map((c) => {
+                          const role = e.committee_roles?.[c]
+                          return (
+                            <span key={c} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700" title={role ? `${c} — ${role}` : c}>
+                              {c}{role ? <span className="text-navy font-medium"> · {role}</span> : null}
+                            </span>
+                          )
+                        })}
                       </span>
                     ) : (
                       <span className="text-gray-300">—</span>
@@ -322,24 +346,32 @@ export default function BoardRosterChart({ editable }: Props) {
               {sorted.map((e) => (
                 <tr key={e.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2 font-medium text-gray-900 sticky left-0 bg-white">{fullName(e)}</td>
-                  {committees.map((c) => (
-                    <td key={c} className="px-2 py-2 text-center">
-                      {(e.committees ?? []).includes(c) ? (
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-navy" title={`${fullName(e)} — ${c}`} />
-                      ) : (
-                        <span className="text-gray-200">·</span>
-                      )}
-                    </td>
-                  ))}
+                  {committees.map((c) => {
+                    const inComm = (e.committees ?? []).includes(c)
+                    const role = e.committee_roles?.[c]
+                    const isChair = role?.toLowerCase().startsWith('chair')
+                    return (
+                      <td key={c} className="px-2 py-2 text-center">
+                        {inComm ? (
+                          isChair ? (
+                            <span className="text-[10px] font-bold text-navy" title={`${fullName(e)} — ${c} Chair`}>C</span>
+                          ) : (
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-navy" title={`${fullName(e)} — ${c}${role ? ` (${role})` : ''}`} />
+                          )
+                        ) : (
+                          <span className="text-gray-200">·</span>
+                        )}
+                      </td>
+                    )
+                  })}
                   <td className="px-3 py-2 text-center text-xs text-navy">{e.leadership ?? ''}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="mt-2 text-xs text-gray-400">
-            ● = committee assignment. Members may serve on more than one committee
-            (combined codes like G&S = Governance + Sustainability, F&A = Finance + Arts,
-            S&A = Sustainability + Audit).
+            ● = committee member · <span className="font-bold text-navy">C</span> = committee chair.
+            Members may serve on more than one committee.
           </p>
         </div>
       )}
@@ -348,22 +380,33 @@ export default function BoardRosterChart({ editable }: Props) {
       {view === 'grouped' && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {committees.map((c) => {
-            const members = sorted.filter((e) => (e.committees ?? []).includes(c))
+            const members = sorted
+              .filter((e) => (e.committees ?? []).includes(c))
+              // Chairs/leaders first, then alphabetical
+              .sort((a, b) => {
+                const ra = (a.committee_roles?.[c] ?? '').toLowerCase()
+                const rb = (b.committee_roles?.[c] ?? '').toLowerCase()
+                const score = (r: string) => (r.startsWith('chair') ? 0 : r.includes('vice') ? 1 : r ? 2 : 3)
+                return score(ra) - score(rb) || fullName(a).localeCompare(fullName(b))
+              })
             return (
               <div key={c} className="rounded-lg border border-gray-200 p-4">
                 <h4 className="text-sm font-semibold text-gray-900">{c}</h4>
                 <p className="text-xs text-gray-400 mb-2">{members.length} member{members.length !== 1 ? 's' : ''}</p>
                 <ul className="space-y-1">
-                  {members.map((e) => (
-                    <li key={e.id} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700">{fullName(e)}</span>
-                      {e.leadership && (
-                        <span className="rounded-full bg-navy/10 px-1.5 py-0.5 text-[10px] font-medium text-navy">
-                          {e.leadership}
-                        </span>
-                      )}
-                    </li>
-                  ))}
+                  {members.map((e) => {
+                    const role = e.committee_roles?.[c]
+                    return (
+                      <li key={e.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-gray-700">{fullName(e)}</span>
+                        {role && (
+                          <span className="shrink-0 rounded-full bg-navy/10 px-1.5 py-0.5 text-[10px] font-medium text-navy">
+                            {role}
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )

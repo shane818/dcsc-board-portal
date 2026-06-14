@@ -343,6 +343,8 @@ export interface BoardRosterEntry {
   committee: string | null
   /** Expanded canonical committees the member serves on. */
   committees: string[]
+  /** Role per committee, keyed by committee name (e.g. {"Finance":"Chair"}). */
+  committee_roles: Record<string, string>
   leadership: string | null
   profile_id: string | null
   sort_order: number
