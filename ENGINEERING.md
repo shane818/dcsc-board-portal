@@ -648,6 +648,7 @@ Migrations live in `supabase/migrations/` and are applied in timestamp order. **
 | `20260401200000_meeting_delete_policy.sql` | Officers and creators can delete meetings |
 | `20260401300000_invite_profile_fields.sql` | Added phone, term_start_date, job_title to invites; updated `handle_new_user()` |
 | `20260401400000_staff_is_officer.sql` | Extended `is_officer()` to include `staff` role |
+| `20260427000000_committee_roles_expand.sql` | Added `vice_chair`, `at_large`, `other` to committee_role enum; `role_label` text column for "Other…" custom labels |
 
 ### Applying a New Migration
 

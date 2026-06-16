@@ -956,6 +956,7 @@ export default function MeetingDetailPage() {
         meetingId={id!}
         profiles={allProfiles}
         canEdit={!!canEdit}
+        committeeId={meeting?.committee_id ?? null}
       />
 
       {/* Meeting Materials — pre-reads, reports, presentations (visible pre-meeting) */}

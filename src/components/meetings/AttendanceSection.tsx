@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useMeetingAttendees } from '../../hooks/useMeetingAttendees'
+import { useCommitteeMembers } from '../../hooks/useCommitteeMembers'
 import type { AttendanceMode, Profile } from '../../types/database'
 
 const BOARD_ROLES = new Set(['chair', 'vice_chair', 'secretary', 'treasurer', 'board_member'])
@@ -30,12 +31,15 @@ interface Props {
   meetingId: string
   profiles: Profile[]
   canEdit: boolean
+  committeeId: string | null
 }
 
-export default function AttendanceSection({ meetingId, profiles, canEdit }: Props) {
+export default function AttendanceSection({ meetingId, profiles, canEdit, committeeId }: Props) {
   const { data: attendees, isLoading, refetch } = useMeetingAttendees(meetingId)
+  const { data: committeeMembers } = useCommitteeMembers(committeeId)
   const [saving, setSaving] = useState<string | null>(null)
   const [showStaffPicker, setShowStaffPicker] = useState(false)
+  const [showBoardPicker, setShowBoardPicker] = useState(false)
   const [showGuestForm, setShowGuestForm] = useState(false)
   const [guestName, setGuestName] = useState('')
   const [guestTitle, setGuestTitle] = useState('')
@@ -48,13 +52,38 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
   const staffAttendees = attendees.filter((a) => a.attendee_category === 'staff')
   const guestAttendees = attendees.filter((a) => a.attendee_category === 'guest')
 
-  // Board member profiles not yet in attendees list
+  // Expected board attendee set. For a committee meeting this is scoped to that
+  // committee's members (driven off the Admin page) plus any board member already
+  // recorded as an attendee (so ad-hoc adds persist). For a full-board meeting
+  // (committeeId null) it is all active board-role profiles — the original behavior.
+  const boardAttendeeProfileIds = new Set(
+    boardAttendees.map((a) => a.profile_id).filter((id): id is string => !!id)
+  )
+  const expectedBoardIds = committeeId
+    ? new Set<string>([
+        ...committeeMembers.map((m) => m.profile_id),
+        ...boardAttendeeProfileIds,
+      ])
+    : null // null => include all active board-role profiles
+
   const boardProfiles = profiles
-    .filter((p) => BOARD_ROLES.has(p.role) && p.is_active)
+    .filter(
+      (p) =>
+        BOARD_ROLES.has(p.role) &&
+        p.is_active &&
+        (expectedBoardIds === null || expectedBoardIds.has(p.id))
+    )
     .sort((a, b) => {
       const order = ['chair', 'vice_chair', 'secretary', 'treasurer', 'board_member']
       return order.indexOf(a.role) - order.indexOf(b.role) || a.full_name.localeCompare(b.full_name)
     })
+
+  // For the "Add board member" picker: active board members not already expected
+  // (only meaningful on committee meetings; empty for full board since all are shown).
+  const expectedBoardIdSet = new Set(boardProfiles.map((p) => p.id))
+  const availableBoardProfiles = profiles
+    .filter((p) => BOARD_ROLES.has(p.role) && p.is_active && !expectedBoardIdSet.has(p.id))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name))
 
   // Staff profiles that are standard attendees and not yet in attendees list
   const standardStaffProfiles = profiles.filter(
@@ -116,6 +145,21 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
     refetch()
     setSaving(null)
     setShowStaffPicker(false)
+  }
+
+  async function addBoardAttendee(profileId: string) {
+    setSaving(profileId)
+    setError(null)
+    const { error } = await supabase.from('meeting_attendees').insert({
+      meeting_id: meetingId,
+      profile_id: profileId,
+      attendee_category: 'board_member',
+      attendance_mode: 'in_person',
+    })
+    if (error) setError(error.message)
+    refetch()
+    setSaving(null)
+    setShowBoardPicker(false)
   }
 
   async function addGuest() {
@@ -203,7 +247,40 @@ export default function AttendanceSection({ meetingId, profiles, canEdit }: Prop
         <div className="mt-4 space-y-5">
           {/* Board Members */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Board Members</h3>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Board Members</h3>
+              {canEdit && availableBoardProfiles.length > 0 && (
+                <button
+                  onClick={() => setShowBoardPicker(!showBoardPicker)}
+                  className="text-xs text-navy hover:text-navy-dark font-medium"
+                >
+                  + Add board member
+                </button>
+              )}
+            </div>
+            {showBoardPicker && (
+              <div className="mb-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                <p className="mb-1 text-xs text-gray-500">Select a board member to add:</p>
+                <div className="space-y-1">
+                  {availableBoardProfiles.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => addBoardAttendee(p.id)}
+                      disabled={saving === p.id}
+                      className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-navy/5 disabled:opacity-50"
+                    >
+                      {p.full_name}
+                      <span className="ml-1 text-xs text-gray-400">— {ROLE_LABEL[p.role] ?? p.role}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {committeeId && boardProfiles.length === 0 && (
+              <p className="mb-2 text-xs text-gray-400">
+                No committee members assigned — add them in Admin → Committees, or use "Add board member".
+              </p>
+            )}
             <ul className="divide-y divide-gray-100">
               {boardProfiles.map((p) => {
                 const mode = getMode(p.id, 'board_member')

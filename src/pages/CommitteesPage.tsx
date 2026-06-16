@@ -6,7 +6,8 @@ import { useDriveFiles } from '../hooks/useDriveFiles'
 import { getDriveFileUrl } from '../lib/drive'
 import DriveViewer from '../components/DriveViewer'
 import BoardRosterChart from '../components/board/BoardRosterChart'
-import type { CommitteeRole, DriveFile } from '../types/database'
+import { COMMITTEE_ROLE_COLORS, roleLabel } from '../lib/committeeRoles'
+import type { DriveFile } from '../types/database'
 
 type CommitteeTab = 'members' | 'documents' | 'roster'
 
@@ -174,15 +175,6 @@ function CommitteeMembersList({ committeeId }: { committeeId: string }) {
     return a.profile.full_name.localeCompare(b.profile.full_name)
   })
 
-  const roleLabel: Record<CommitteeRole, string> = {
-    chair: 'Chair', member: 'Member', ex_officio: 'Ex Officio',
-  }
-  const roleColors: Record<CommitteeRole, string> = {
-    chair: 'bg-dcsc-red/10 text-dcsc-red',
-    member: 'bg-gray-100 text-gray-600',
-    ex_officio: 'bg-purple-50 text-purple-700',
-  }
-
   return (
     <div className="space-y-2">
       {sorted.map((m) => (
@@ -191,8 +183,8 @@ function CommitteeMembersList({ committeeId }: { committeeId: string }) {
             <span className="block truncate text-sm font-medium text-gray-900">{m.profile.full_name}</span>
             <span className="block truncate text-xs text-gray-400">{m.profile.email}</span>
           </div>
-          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${roleColors[m.role]}`}>
-            {roleLabel[m.role]}
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${COMMITTEE_ROLE_COLORS[m.role]}`}>
+            {roleLabel(m)}
           </span>
         </div>
       ))}

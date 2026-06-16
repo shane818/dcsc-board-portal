@@ -7,6 +7,7 @@ import { useCommitteeMembers } from '../hooks/useCommitteeMembers'
 import { useProfiles } from '../hooks/useProfiles'
 import { inviteMember } from '../lib/inviteMember'
 import { deleteMember } from '../lib/deleteMember'
+import { COMMITTEE_ROLE_OPTIONS } from '../lib/committeeRoles'
 import type { BoardRole, CommitteeRole } from '../types/database'
 
 type Tab = 'roster' | 'committees'
@@ -887,6 +888,7 @@ function CommitteeMembersSection({ committeeId }: { committeeId: string }) {
   const [addingMember, setAddingMember] = useState(false)
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [selectedRole, setSelectedRole] = useState<CommitteeRole>('member')
+  const [selectedRoleLabel, setSelectedRoleLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -902,11 +904,13 @@ function CommitteeMembersSection({ committeeId }: { committeeId: string }) {
       profile_id: selectedProfileId,
       committee_id: committeeId,
       role: selectedRole,
+      role_label: selectedRole === 'other' ? selectedRoleLabel.trim() || null : null,
     })
     if (err) setError(err.message)
     else {
       setSelectedProfileId('')
       setSelectedRole('member')
+      setSelectedRoleLabel('')
       setAddingMember(false)
       refetch()
     }
@@ -914,9 +918,21 @@ function CommitteeMembersSection({ committeeId }: { committeeId: string }) {
   }
 
   async function handleRoleChange(membershipId: string, role: CommitteeRole) {
+    // Clear role_label when switching away from 'other'; the inline text input
+    // populates it when 'other' is selected.
+    const update = role === 'other' ? { role } : { role, role_label: null }
     const { error: err } = await supabase
       .from('committee_memberships')
-      .update({ role })
+      .update(update)
+      .eq('id', membershipId)
+    if (err) setError(err.message)
+    else refetch()
+  }
+
+  async function handleRoleLabelChange(membershipId: string, label: string) {
+    const { error: err } = await supabase
+      .from('committee_memberships')
+      .update({ role_label: label.trim() || null })
       .eq('id', membershipId)
     if (err) setError(err.message)
     else refetch()
@@ -970,10 +986,19 @@ function CommitteeMembersSection({ committeeId }: { committeeId: string }) {
             onChange={(e) => setSelectedRole(e.target.value as CommitteeRole)}
             className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
           >
-            <option value="member">Member</option>
-            <option value="chair">Chair</option>
-            <option value="ex_officio">Ex Officio</option>
+            {COMMITTEE_ROLE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
+          {selectedRole === 'other' && (
+            <input
+              type="text"
+              value={selectedRoleLabel}
+              onChange={(e) => setSelectedRoleLabel(e.target.value)}
+              placeholder="Custom role"
+              className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          )}
           <button
             type="submit"
             disabled={saving}
@@ -997,14 +1022,27 @@ function CommitteeMembersSection({ committeeId }: { committeeId: string }) {
                 <span className="ml-2 text-xs text-gray-400">{m.profile.email}</span>
               </div>
               <div className="flex items-center gap-2">
+                {m.role === 'other' && (
+                  <input
+                    type="text"
+                    defaultValue={m.role_label ?? ''}
+                    onBlur={(e) => {
+                      if ((e.target.value.trim() || null) !== (m.role_label ?? null)) {
+                        handleRoleLabelChange(m.id, e.target.value)
+                      }
+                    }}
+                    placeholder="Custom role"
+                    className="w-28 rounded border border-gray-200 px-2 py-0.5 text-xs"
+                  />
+                )}
                 <select
                   value={m.role}
                   onChange={(e) => handleRoleChange(m.id, e.target.value as CommitteeRole)}
                   className="rounded border border-gray-200 px-2 py-0.5 text-xs"
                 >
-                  <option value="member">Member</option>
-                  <option value="chair">Chair</option>
-                  <option value="ex_officio">Ex Officio</option>
+                  {COMMITTEE_ROLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
                 <button
                   onClick={() => handleRemove(m.id, m.profile.full_name)}

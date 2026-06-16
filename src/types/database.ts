@@ -11,7 +11,7 @@ export type BoardRole =
 
 export type OfficerRole = Extract<BoardRole, 'chair' | 'vice_chair' | 'secretary' | 'treasurer'>
 
-export type CommitteeRole = 'chair' | 'member' | 'ex_officio'
+export type CommitteeRole = 'chair' | 'vice_chair' | 'member' | 'ex_officio' | 'at_large' | 'other'
 
 export type MeetingStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 
@@ -78,6 +78,7 @@ export interface CommitteeMembership {
   profile_id: string
   committee_id: string
   role: CommitteeRole
+  role_label: string | null
   joined_at: string
 }
 

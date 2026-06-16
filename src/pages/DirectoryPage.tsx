@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useAllProfiles } from '../hooks/useAllProfiles'
 import { useAllCommittees } from '../hooks/useAllCommittees'
 import { useServiceHistory } from '../hooks/useServiceHistory'
+import { COMMITTEE_ROLE_LABELS, COMMITTEE_ROLE_OPTIONS } from '../lib/committeeRoles'
 import type { BoardRole, CommitteeRole, ServiceEntryType, ServiceHistoryEntry } from '../types/database'
 
 // ---- Helpers ----
@@ -26,12 +27,6 @@ const BOARD_ROLE_BADGE: Record<BoardRole, string> = {
   board_member: 'bg-gray-100 text-gray-700',
   staff: 'bg-orange-100 text-orange-800',
   guest: 'bg-gray-100 text-gray-500',
-}
-
-const COMMITTEE_ROLE_LABELS: Record<CommitteeRole, string> = {
-  chair: 'Chair',
-  member: 'Member',
-  ex_officio: 'Ex Officio',
 }
 
 const ROLE_SORT_ORDER: Record<BoardRole, number> = {
@@ -485,9 +480,9 @@ function AddServiceEntryForm({
               onChange={(e) => setCommitteeRole(e.target.value as CommitteeRole)}
               className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
             >
-              <option value="member">Member</option>
-              <option value="chair">Chair</option>
-              <option value="ex_officio">Ex Officio</option>
+              {COMMITTEE_ROLE_OPTIONS.filter((opt) => opt.value !== 'other').map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
           </div>
         </div>
