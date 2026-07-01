@@ -252,7 +252,7 @@ export interface MeetingMinutes {
   status: MeetingMinutesStatus
   drive_file_id: string | null
   drive_file_url: string | null
-  drafted_by: string
+  drafted_by: string | null
   approved_by: string | null
   approved_at: string | null
   created_at: string
@@ -315,7 +315,7 @@ export interface AgendaItemMotionWithNames extends AgendaItemMotion {
 
 /** Meeting minutes with drafter and approver names */
 export interface MeetingMinutesWithDrafter extends MeetingMinutes {
-  drafter: { full_name: string }
+  drafter: { full_name: string } | null
   approver: { full_name: string } | null
 }
 

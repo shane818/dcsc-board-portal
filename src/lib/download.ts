@@ -42,10 +42,11 @@ export function downloadDoc(filename: string, title: string, bodyHtml: string) {
 }
 
 /** Open a print window with the given HTML and trigger the browser's print
- *  dialog (where the user can choose "Save as PDF"). Zero-dependency PDF path. */
-export function openPrintWindow(title: string, bodyHtml: string) {
+ *  dialog (where the user can choose "Save as PDF"). Zero-dependency PDF path.
+ *  Returns false if the browser blocked the pop-up, so callers can fall back. */
+export function openPrintWindow(title: string, bodyHtml: string): boolean {
   const win = window.open('', '_blank', 'width=800,height=900')
-  if (!win) return
+  if (!win) return false
   win.document.write(
     `<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
       `<style>${DOC_STYLES}</style></head><body>${bodyHtml || '<p></p>'}</body></html>`
@@ -54,6 +55,7 @@ export function openPrintWindow(title: string, bodyHtml: string) {
   win.focus()
   // Give the new window a tick to render before invoking print.
   setTimeout(() => win.print(), 250)
+  return true
 }
 
 function escapeHtml(s: string): string {

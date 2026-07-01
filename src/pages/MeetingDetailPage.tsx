@@ -658,7 +658,12 @@ export default function MeetingDetailPage() {
 
   function handleDownloadNotesPdf() {
     const body = `<h1>${notesDocTitle()}</h1>${sanitizeHtml(notesHtml) || '<p>(No notes)</p>'}`
-    openPrintWindow(notesDocTitle(), body)
+    const opened = openPrintWindow(notesDocTitle(), body)
+    if (!opened) {
+      // Pop-up blocked — fall back to the Word download so the click never silently no-ops.
+      alert('Your browser blocked the print window. Downloading a Word (.doc) copy instead — allow pop-ups for this site to use "Save as PDF".')
+      handleDownloadNotesDoc()
+    }
   }
 
   function handleGenerateSummary() {
@@ -1485,7 +1490,7 @@ export default function MeetingDetailPage() {
           // Draft mode
           <div className="mt-4 space-y-4">
             <p className="text-sm text-gray-500">
-              Drafted by {minutes.drafter.full_name}
+              Drafted by {minutes.drafter?.full_name ?? 'a former member'}
             </p>
 
             {/* Read-only notice for non-editors */}
