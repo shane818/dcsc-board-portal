@@ -13,7 +13,15 @@ const DOT_COLORS: Record<MeetingStatus, string> = {
   scheduled: 'bg-green-500',
   in_progress: 'bg-navy',
   completed: 'bg-gray-400',
-  cancelled: 'bg-red-400',
+  cancelled: 'bg-red-500',
+}
+
+// Pronounced day-cell fill for days that have meetings.
+const CELL_COLORS: Record<MeetingStatus, string> = {
+  scheduled: 'bg-green-500 text-white hover:bg-green-600',
+  in_progress: 'bg-navy text-white hover:bg-navy-dark',
+  completed: 'bg-gray-400 text-white hover:bg-gray-500',
+  cancelled: 'bg-red-500 text-white hover:bg-red-600',
 }
 
 const LEGEND: { status: MeetingStatus; label: string }[] = [
@@ -161,19 +169,16 @@ export default function YearCalendar({ meetings }: Props) {
                       type="button"
                       title={title}
                       onClick={() => navigate(`/meetings/${dayMeetings[0].id}`)}
-                      className={`relative flex h-7 flex-col items-center justify-center rounded-md text-xs font-medium text-gray-900 hover:bg-gray-100 ${
-                        isToday ? 'ring-1 ring-navy/40' : ''
-                      }`}
+                      className={`relative flex h-7 items-center justify-center rounded-md text-xs font-bold ${
+                        CELL_COLORS[dayMeetings[0].status]
+                      } ${isToday ? 'ring-2 ring-navy' : ''}`}
                     >
-                      <span className="leading-none">{day}</span>
-                      <span className="mt-0.5 flex items-center gap-0.5">
-                        {dayMeetings.slice(0, 3).map((m, j) => (
-                          <span key={j} className={`h-1.5 w-1.5 rounded-full ${DOT_COLORS[m.status]}`} />
-                        ))}
-                        {dayMeetings.length > 3 && (
-                          <span className="text-[9px] leading-none text-gray-400">+</span>
-                        )}
-                      </span>
+                      {day}
+                      {dayMeetings.length > 1 && (
+                        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-white px-0.5 text-[9px] font-bold text-gray-700 shadow ring-1 ring-gray-200">
+                          {dayMeetings.length}
+                        </span>
+                      )}
                     </button>
                   )
                 })}
