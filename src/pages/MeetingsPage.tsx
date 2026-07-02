@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCommittees } from '../hooks/useCommittees'
 import { useFilteredMeetings } from '../hooks/useMeetings'
+import YearCalendar from '../components/meetings/YearCalendar'
 import type { MeetingStatus } from '../types/database'
 
 const statusColors: Record<MeetingStatus, string> = {
@@ -156,6 +157,9 @@ export default function MeetingsPage() {
           </div>
         )}
       </div>
+
+      {/* Full-year calendar view (honors the filters above) */}
+      {!isLoading && !error && <YearCalendar meetings={meetings} />}
     </div>
   )
 }
