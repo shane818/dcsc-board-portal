@@ -13,6 +13,7 @@ import { useAllActionItems } from '../hooks/useActionItems'
 import { useMeetingMinutes } from '../hooks/useMeetingMinutes'
 import { useProfiles } from '../hooks/useProfiles'
 import { useAllProfiles } from '../hooks/useAllProfiles'
+import { useCommitteeMembers } from '../hooks/useCommitteeMembers'
 import { useMeetingAttendees } from '../hooks/useMeetingAttendees'
 import { supabase } from '../lib/supabase'
 import { buildMinutesTemplate } from '../lib/minutesTemplate'
@@ -117,7 +118,18 @@ export default function MeetingDetailPage() {
   const { data: notes, isLoading: notesLoading, refetch: refetchNotes } = useMeetingNotes(id)
   const { data: profiles } = useProfiles()
   const { data: allProfiles } = useAllProfiles(true)
+  const { data: committeeMembers } = useCommitteeMembers(meeting?.committee_id ?? null)
   const { data: attendees } = useMeetingAttendees(id)
+
+  // Google Calendar invitees: default to the meeting's committee members; only a
+  // full-board meeting (committee_id null) invites the whole active board.
+  const calendarInviteEmails = (() => {
+    const activeIds = new Set(allProfiles.map((p) => p.id))
+    const emails = meeting?.committee_id
+      ? committeeMembers.filter((m) => activeIds.has(m.profile_id)).map((m) => m.profile.email)
+      : allProfiles.filter((p) => p.is_active).map((p) => p.email)
+    return [...new Set(emails)]
+  })()
 
   // Board profiles for attendance + voting (full profile data needed)
   const BOARD_ROLES = new Set(['chair', 'vice_chair', 'secretary', 'treasurer', 'board_member'])
@@ -936,7 +948,7 @@ export default function MeetingDetailPage() {
                 1,
                 meeting.location,
                 meeting.description,
-                allProfiles.filter((p) => p.is_active).map((p) => p.email)
+                calendarInviteEmails
               )}
               target="_blank"
               rel="noopener noreferrer"
